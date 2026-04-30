@@ -1,0 +1,79 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "_comment": "opencode-harness global config. Merged into ~/.config/opencode/opencode.json.",
+
+  "plugin": [
+    "superpowers@git+https://github.com/obra/superpowers.git"
+  ],
+
+  "default_agent": "harness",
+
+  "instructions": ["AGENTS.md"],
+
+  "permission": {
+    "skill": {
+      "*": "deny",
+
+      "gsd-progress": "allow",
+      "gsd-resume-work": "allow",
+      "gsd-pause-work": "allow",
+      "gsd-help": "allow",
+      "gsd-update": "allow",
+      "gsd-quick": "allow",
+      "gsd-new-project": "allow",
+      "gsd-new-milestone": "allow",
+      "gsd-discuss-phase": "allow",
+      "gsd-plan-phase": "allow",
+      "gsd-execute-phase": "allow",
+      "gsd-verify-work": "allow",
+      "gsd-debug": "allow",
+      "gsd-audit-milestone": "allow",
+      "gsd-complete-milestone": "allow",
+
+      "gstack-office-hours": "allow",
+      "gstack-plan-ceo-review": "allow",
+      "gstack-plan-eng-review": "allow",
+      "gstack-plan-design-review": "allow",
+      "gstack-autoplan": "allow",
+      "gstack-review": "allow",
+      "gstack-codex": "allow",
+      "gstack-browse": "allow",
+      "gstack-ship": "allow",
+      "gstack-retro": "allow",
+      "gstack-learn": "allow",
+      "gstack-freeze": "allow",
+      "gstack-guard": "allow",
+      "gstack-careful": "allow",
+
+      "brainstorming": "allow",
+      "writing-plans": "allow",
+      "executing-plans": "allow",
+      "subagent-driven-development": "allow",
+      "test-driven-development": "allow",
+      "using-git-worktrees": "allow",
+      "systematic-debugging": "allow",
+      "requesting-code-review": "allow",
+      "receiving-code-review": "allow",
+      "verification-before-completion": "allow",
+      "finishing-a-development-branch": "allow"
+    },
+
+    "task": {
+      "*": "deny",
+      "gsd-planner": "allow",
+      "gsd-plan-checker": "allow",
+      "gsd-executor": "allow",
+      "gsd-verifier": "allow",
+      "gsd-debugger": "allow",
+      "gsd-phase-researcher": "allow"
+    },
+
+    "edit": "allow",
+    "bash": {
+      "git push --force*": "deny",
+      "git reset --hard *": "ask",
+      "rm -rf *": "deny",
+      "*": "allow"
+    }
+  }
+}
