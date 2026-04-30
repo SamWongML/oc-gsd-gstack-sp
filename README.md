@@ -42,6 +42,17 @@ harness install
 curl -fsSL https://raw.githubusercontent.com/YOUR_USER/opencode-harness/main/install.sh | bash
 ```
 
+### 🛠️ From a local clone (no tap, no curl)
+
+For hacking on the harness itself, offline installs, or skipping the tap:
+
+```bash
+git clone https://github.com/YOUR_USER/opencode-harness.git ~/.config/opencode-harness
+cd ~/.config/opencode-harness && chmod +x bin/harness && ./bin/harness install
+```
+
+Full walkthrough: [`docs/LOCAL-BUILD.md`](docs/LOCAL-BUILD.md).
+
 ### 🤖 Tell your AI to do it
 
 Paste this to opencode (or any agent in your terminal):
