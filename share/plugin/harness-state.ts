@@ -15,9 +15,12 @@
 // Loaded automatically by opencode at startup from ~/.config/opencode/plugin/.
 
 import type { Plugin } from "@opencode-ai/plugin"
-import { readFileSync, existsSync } from "node:fs"
+import { readFileSync, existsSync, writeFileSync, renameSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { homedir } from "node:os"
+
+const HEARTBEAT_PATH = join(homedir(), ".config", "opencode", ".harness-heartbeat.json")
 
 // -------------------- legs.json (key set, for leg validation) --------------------
 
@@ -38,6 +41,64 @@ function loadKnownLegs(): Set<string> {
 }
 
 const KNOWN_LEGS = loadKnownLegs()
+
+// -------------------- heartbeat (operator visibility) --------------------
+
+interface Heartbeat {
+  lastInjection: string | null
+  injectionCount: number
+  lastIntercept: string | null
+  interceptCount: number
+  lastAbort: string | null
+  abortCount: number
+  lastAbortedSkill: string | null
+  lastIdleDeflection: string | null
+  lastAutoAdvance: string | null
+}
+
+function readHeartbeat(): Heartbeat {
+  try {
+    if (existsSync(HEARTBEAT_PATH)) {
+      const parsed = JSON.parse(readFileSync(HEARTBEAT_PATH, "utf8"))
+      return {
+        lastInjection: parsed.lastInjection ?? null,
+        injectionCount: parsed.injectionCount ?? 0,
+        lastIntercept: parsed.lastIntercept ?? null,
+        interceptCount: parsed.interceptCount ?? 0,
+        lastAbort: parsed.lastAbort ?? null,
+        abortCount: parsed.abortCount ?? 0,
+        lastAbortedSkill: parsed.lastAbortedSkill ?? null,
+        lastIdleDeflection: parsed.lastIdleDeflection ?? null,
+        lastAutoAdvance: parsed.lastAutoAdvance ?? null,
+      }
+    }
+  } catch {
+    /* fall through to defaults */
+  }
+  return {
+    lastInjection: null,
+    injectionCount: 0,
+    lastIntercept: null,
+    interceptCount: 0,
+    lastAbort: null,
+    abortCount: 0,
+    lastAbortedSkill: null,
+    lastIdleDeflection: null,
+    lastAutoAdvance: null,
+  }
+}
+
+function updateHeartbeat(patch: Partial<Heartbeat>): void {
+  try {
+    const current = readHeartbeat()
+    const next = { ...current, ...patch }
+    const tmp = HEARTBEAT_PATH + ".tmp"
+    writeFileSync(tmp, JSON.stringify(next, null, 2))
+    renameSync(tmp, HEARTBEAT_PATH)
+  } catch {
+    /* heartbeat is best-effort */
+  }
+}
 
 // -------------------- HARNESS.md parsing --------------------
 
@@ -97,6 +158,12 @@ export const HarnessState: Plugin = async ({ directory }) => {
           )
         }
       }
+
+      const hb = readHeartbeat()
+      updateHeartbeat({
+        lastInjection: new Date().toISOString(),
+        injectionCount: hb.injectionCount + 1,
+      })
     },
   }
 }

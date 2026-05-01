@@ -311,6 +311,21 @@ cmd_doctor() {
     warns=$((warns+1))
   fi
 
+  # Heartbeat (operator visibility — written by both plugins on every hook fire)
+  local hb="$OPENCODE_DIR/.harness-heartbeat.json"
+  if [[ -f "$hb" ]]; then
+    local last_inj inj_count last_abort abort_count last_skill
+    last_inj=$(jq -r '.lastInjection // "(never)"' "$hb" 2>/dev/null)
+    inj_count=$(jq -r '.injectionCount // 0' "$hb" 2>/dev/null)
+    last_abort=$(jq -r '.lastAbort // "(never)"' "$hb" 2>/dev/null)
+    abort_count=$(jq -r '.abortCount // 0' "$hb" 2>/dev/null)
+    last_skill=$(jq -r '.lastAbortedSkill // "—"' "$hb" 2>/dev/null)
+    ok "Heartbeat: last injection $last_inj (count: $inj_count); last abort $last_abort (count: $abort_count, skill: $last_skill)"
+  else
+    warn "No heartbeat yet at $hb — run opencode once with the harness loaded."
+    warns=$((warns+1))
+  fi
+
   # Project-level (if in a project)
   if [[ -f .planning/HARNESS.md ]]; then
     local leg; leg=$(grep -E '^- \*\*Leg:\*\*' .planning/HARNESS.md | head -n1 | sed 's/.*: *//;s/ *$//')
@@ -381,6 +396,7 @@ cmd_uninstall() {
   echo "  - $OPENCODE_DIR/agents/{harness,decide,build,verify}.md"
   echo "  - $OPENCODE_DIR/plugin/harness-{state,guard}.ts"
   echo "  - $OPENCODE_DIR/plugin/legs.json"
+  echo "  - $OPENCODE_DIR/.harness-heartbeat.json"
   echo "  - $OPENCODE_DIR/skills/gstack"
   echo "  - GSD-installed agents/skills (gsd-*)"
   echo
@@ -394,6 +410,7 @@ cmd_uninstall() {
   rm -f "$OPENCODE_DIR"/agents/{harness,decide,build,verify}.md
   rm -f "$OPENCODE_DIR"/plugin/harness-{state,guard}.ts
   rm -f "$OPENCODE_DIR/plugin/legs.json"
+  rm -f "$OPENCODE_DIR/.harness-heartbeat.json" "$OPENCODE_DIR/.harness-heartbeat.json.tmp"
   rm -rf "$OPENCODE_DIR/skills/gstack"
   # Remove GSD-installed skills/agents starting with gsd-
   if [[ -d "$OPENCODE_DIR/skills" ]]; then
