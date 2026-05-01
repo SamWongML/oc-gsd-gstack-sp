@@ -26,7 +26,10 @@
         "gstack-review"
       ],
       "allowedTasks": [
-        "gsd-phase-researcher"
+        "gsd-phase-researcher",
+        "gsd-planner",
+        "gsd-pattern-mapper",
+        "gsd-codebase-mapper"
       ],
       "allowedCommands": [
         "/gstack-office-hours",
@@ -60,9 +63,7 @@
         "gsd-execute-phase",
         "gstack-ship"
       ],
-      "allowedTasks": [
-        "gsd-progress"
-      ],
+      "allowedTasks": [],
       "allowedCommands": [
         "/gsd-discuss-phase",
         "/gsd-plan-phase",
@@ -100,7 +101,8 @@
       ],
       "allowedTasks": [
         "gsd-executor",
-        "gsd-debugger"
+        "gsd-debugger",
+        "gsd-code-fixer"
       ],
       "allowedCommands": [
         "/gsd-execute-phase",
@@ -135,7 +137,10 @@
         "gstack-ship"
       ],
       "allowedTasks": [
-        "gsd-verifier"
+        "gsd-verifier",
+        "gsd-code-reviewer",
+        "gsd-eval-auditor",
+        "gsd-security-auditor"
       ],
       "allowedCommands": [
         "/gstack-review",

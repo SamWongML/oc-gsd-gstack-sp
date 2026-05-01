@@ -11,6 +11,9 @@ permission:
     "*": ask
   task:
     "gsd-verifier": allow
+    "gsd-code-reviewer": allow
+    "gsd-eval-auditor": allow
+    "gsd-security-auditor": allow
     "*": deny
   skill:
     "gstack-review": allow
@@ -20,7 +23,6 @@ permission:
     "gsd-verify-work": allow
     "gsd-audit-milestone": allow
     "gsd-complete-milestone": allow
-    "gsd-progress": allow
     "requesting-code-review": allow
     "receiving-code-review": allow
     "*": deny

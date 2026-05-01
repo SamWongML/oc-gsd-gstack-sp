@@ -14,6 +14,7 @@ permission:
   task:
     "gsd-executor": allow
     "gsd-debugger": allow
+    "gsd-code-fixer": allow
     "*": deny
   skill:
     "test-driven-development": allow
@@ -24,8 +25,6 @@ permission:
     "verification-before-completion": allow
     "finishing-a-development-branch": allow
     "gsd-execute-phase": allow
-    "gsd-debug": allow
-    "gsd-progress": allow
     "*": deny
 ---
 

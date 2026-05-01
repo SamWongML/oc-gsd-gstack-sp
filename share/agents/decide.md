@@ -9,6 +9,9 @@ permission:
     "*": ask
   task:
     "gsd-phase-researcher": allow
+    "gsd-planner": allow
+    "gsd-pattern-mapper": allow
+    "gsd-codebase-mapper": allow
     "*": deny
   skill:
     "gstack-office-hours": allow
@@ -20,7 +23,6 @@ permission:
     "gstack-browse": allow
     "gsd-discuss-phase": allow
     "gsd-plan-phase": allow
-    "gsd-progress": allow
     "*": deny
 ---
 

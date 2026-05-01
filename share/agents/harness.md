@@ -9,18 +9,8 @@ permission:
     "rm -rf *": deny
     "*": allow
   task:
-    "gsd-progress": allow
     "*": deny
   skill:
-    "gsd-progress": allow
-    "gsd-resume-work": allow
-    "gsd-pause-work": allow
-    "gsd-help": allow
-    "gsd-update": allow
-    "gsd-quick": allow
-    "gsd-new-project": allow
-    "gsd-new-milestone": allow
-    "gsd-debug": allow
     "*": deny
 ---
 
