@@ -75,11 +75,18 @@ cmd_install() {
 
   mkdir -p "$OPENCODE_DIR"/{agents,plugin,skills}
 
-  # 1. GSD --minimal (6 core skills, ~6 subagents)
-  step "Installing GSD (minimal)"
-  # The official installer is idempotent and accepts these flags.
-  npx --yes get-shit-done-cc@latest --opencode --global --minimal >/dev/null
-  ok "GSD installed/refreshed (minimal: 6 skills)"
+  # 1. gsd-opencode (12 skills, ~33 subagents, ~85 slash commands)
+  step "Installing gsd-opencode"
+  # Install first so the new structured layout (skills/gsd-*/SKILL.md) is in
+  # place before we sweep, minimizing the "no skills" window if anything goes
+  # wrong mid-swap.
+  npx --yes gsd-opencode@latest install --global >/dev/null
+  # Legacy cleanup: get-shit-done-cc --minimal shipped flat skills/gsd-*.md
+  # files; gsd-opencode uses skills/gsd-*/SKILL.md directories instead.
+  if [[ -d "$OPENCODE_DIR/skills" ]]; then
+    find "$OPENCODE_DIR/skills" -maxdepth 1 -type f -name 'gsd-*.md' -delete
+  fi
+  ok "gsd-opencode installed/refreshed"
 
   # 2. gstack with --prefix for namespacing
   local gstack_dir="$OPENCODE_DIR/skills/gstack"
