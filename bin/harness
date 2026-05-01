@@ -49,6 +49,7 @@ ${BOLD}Commands:${RESET}
   init [size]            Initialize harness in current project
                          size: mini | small | medium | large (default: medium)
   doctor                 Verify install, run health checks
+  self-test              Validate plugin shape, legs.json, hook contract, project leg
   status                 Show what's installed and where
   uninstall              Remove the harness (with confirmation)
   version                Print version
@@ -388,6 +389,97 @@ cmd_status() {
   fi
 }
 
+# ---------------------------------------------------------------- self-test
+cmd_self_test() {
+  hdr "Running harness self-test"
+  local errs=0
+  local warns=0
+
+  # 1. Plugin files exist + have a default export.
+  for p in harness-state.ts harness-guard.ts; do
+    local f="$OPENCODE_DIR/plugin/$p"
+    if [[ ! -f "$f" ]]; then
+      warn "Plugin missing: $p — run: harness install"
+      errs=$((errs+1))
+      continue
+    fi
+    if grep -q '^export default' "$f"; then
+      ok "Plugin: $p (default export present)"
+    else
+      warn "Plugin $p has no 'export default' — opencode will not load it"
+      errs=$((errs+1))
+    fi
+  done
+
+  # 2. legs.json parses + has the canonical 5 legs.
+  local legs="$OPENCODE_DIR/plugin/legs.json"
+  if [[ ! -f "$legs" ]]; then
+    warn "legs.json missing at $legs — run: harness install"
+    errs=$((errs+1))
+  elif ! jq -e '.legs | has("decision") and has("context") and has("execution") and has("verification") and has("ship")' \
+        "$legs" >/dev/null 2>&1; then
+    warn "legs.json present but missing one of decision/context/execution/verification/ship"
+    errs=$((errs+1))
+  else
+    # Each leg has allowedSkills + forbiddenSkills arrays
+    local bad
+    bad=$(jq -r '
+      .legs
+      | to_entries[]
+      | select((.value.allowedSkills | type) != "array" or (.value.forbiddenSkills | type) != "array")
+      | .key
+    ' "$legs")
+    if [[ -n "$bad" ]]; then
+      warn "legs.json: legs missing allowedSkills/forbiddenSkills arrays: $(echo "$bad" | tr '\n' ' ')"
+      errs=$((errs+1))
+    else
+      ok "legs.json: 5 legs, allowedSkills + forbiddenSkills arrays valid"
+    fi
+  fi
+
+  # 3. opencode plugin SDK exposes the experimental.chat.system.transform hook
+  #    we depend on. If opencode renames/removes it, harness-state silently
+  #    becomes a no-op — warn loudly here so doctor surfaces it.
+  local plugin_types="$OPENCODE_DIR/node_modules/@opencode-ai/plugin/dist/index.d.ts"
+  if [[ -f "$plugin_types" ]]; then
+    if grep -q '"experimental.chat.system.transform"' "$plugin_types" \
+       || grep -q "experimental\.chat\.system\.transform" "$plugin_types"; then
+      ok "Hook: experimental.chat.system.transform present in plugin types"
+    else
+      warn "Hook 'experimental.chat.system.transform' NOT found in plugin types — opencode may have renamed it. Layer 3 injection at risk."
+      warns=$((warns+1))
+    fi
+  else
+    warn "Cannot find $plugin_types — skipping hook contract check"
+    warns=$((warns+1))
+  fi
+
+  # 4. If we're in a project, validate Leg field against legs.json keys.
+  if [[ -f .planning/HARNESS.md && -f "$legs" ]]; then
+    local leg
+    leg=$(grep -E '^- \*\*Leg:\*\*' .planning/HARNESS.md | head -n1 | sed 's/.*: *//;s/ *$//' | tr '[:upper:]' '[:lower:]')
+    if [[ -z "$leg" ]]; then
+      warn "Project HARNESS.md has no Leg: field"
+      warns=$((warns+1))
+    elif jq -e --arg leg "$leg" '.legs | has($leg)' "$legs" >/dev/null 2>&1; then
+      ok "Project: Leg '$leg' is registered in legs.json"
+    else
+      warn "Project: Leg '$leg' is NOT in legs.json — guard will fail open"
+      warns=$((warns+1))
+    fi
+  fi
+
+  echo
+  if [[ $errs -gt 0 ]]; then
+    fail "$errs error(s), $warns warning(s)"
+  elif [[ $warns -gt 0 ]]; then
+    warn "$warns warning(s)"
+    exit 0
+  else
+    ok "${BOLD}Self-test passed.${RESET}"
+  fi
+}
+
 # ---------------------------------------------------------------- uninstall
 cmd_uninstall() {
   hdr "Uninstalling opencode-harness"
@@ -434,6 +526,7 @@ case "${1:-help}" in
   update)             shift; cmd_update    "$@" ;;
   init)               shift; cmd_init      "$@" ;;
   doctor)             shift; cmd_doctor    "$@" ;;
+  self-test|selftest) shift; cmd_self_test "$@" ;;
   status)             shift; cmd_status    "$@" ;;
   uninstall)          shift; cmd_uninstall "$@" ;;
   version|-v|--version) cmd_version ;;
