@@ -8,11 +8,38 @@
 //   - This hook re-injects state every turn, so it never fades.
 //   - The injection is small (~200 chars), cheap.
 //
+// When the project's Leg field is missing or unknown vs legs.json, also push
+// a <harness-warning> block. That is the backup channel for headless runs
+// where TUI toasts (Layer 4) are silent.
+//
 // Loaded automatically by opencode at startup from ~/.config/opencode/plugin/.
 
 import type { Plugin } from "@opencode-ai/plugin"
 import { readFileSync, existsSync } from "node:fs"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
+
+// -------------------- legs.json (key set, for leg validation) --------------------
+
+const PLUGIN_DIR = dirname(fileURLToPath(import.meta.url))
+const LEGS_PATH = join(PLUGIN_DIR, "legs.json")
+
+function loadKnownLegs(): Set<string> {
+  try {
+    const data = JSON.parse(readFileSync(LEGS_PATH, "utf8"))
+    if (data?.legs && typeof data.legs === "object") {
+      return new Set(Object.keys(data.legs))
+    }
+    console.warn(`[harness-state] ${LEGS_PATH} has no .legs object — leg validation disabled.`)
+  } catch (err) {
+    console.warn(`[harness-state] failed to load ${LEGS_PATH}: ${(err as Error).message} — leg validation disabled.`)
+  }
+  return new Set()
+}
+
+const KNOWN_LEGS = loadKnownLegs()
+
+// -------------------- HARNESS.md parsing --------------------
 
 function loadState(directory: string): string | null {
   const harnessFile = join(directory, ".planning", "HARNESS.md")
@@ -37,7 +64,8 @@ export const HarnessState: Plugin = async ({ directory }) => {
       if (!state) return
 
       const size = field(state, "Size") || "unset"
-      const leg = field(state, "Leg") || "unset"
+      const legRaw = field(state, "Leg")
+      const leg = legRaw || "unset"
       const phase = field(state, "Phase") || "—"
       const plan = field(state, "Plan") || "—"
       const allowed = field(state, "Allowed next") || "(none specified)"
@@ -60,6 +88,14 @@ export const HarnessState: Plugin = async ({ directory }) => {
       // opencode plugin API exposes output.system as a string array we can append to.
       if (Array.isArray(output?.system)) {
         output.system.push(block)
+
+        // Backup channel for headless mode: warn on missing/unknown leg.
+        if (KNOWN_LEGS.size > 0 && !KNOWN_LEGS.has(legRaw.toLowerCase())) {
+          const value = legRaw || "(missing)"
+          output.system.push(
+            `<harness-warning>\n  unknown leg '${value}' — guard fails open. Edit .planning/HARNESS.md or run /gsd-progress.\n</harness-warning>`,
+          )
+        }
       }
     },
   }
