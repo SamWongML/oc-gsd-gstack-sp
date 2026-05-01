@@ -101,6 +101,20 @@ cmd_install() {
   cp -f "$SHARE/plugin/harness-guard.ts" "$OPENCODE_DIR/plugin/"
   ok "Harness plugins installed (state + guard)"
 
+  # 3b. Copy legs.json — single source of truth for leg rules.
+  # Plugins (Phase 02+) read this at module-load via dirname(import.meta.url).
+  # Today the guard still uses its hardcoded LEG_RULES; shipping the file now
+  # so installs in the field already have it when Phase 02 lands.
+  step "Installing legs.json"
+  if [[ ! -f "$SHARE/legs.json" ]]; then
+    fail "Missing $SHARE/legs.json — harness install assets are incomplete."
+  fi
+  jq -e '.legs | has("decision") and has("context") and has("execution") and has("verification") and has("ship")' \
+      "$SHARE/legs.json" >/dev/null \
+    || fail "share/legs.json failed schema check (need legs: decision/context/execution/verification/ship)"
+  cp -f "$SHARE/legs.json" "$OPENCODE_DIR/plugin/legs.json"
+  ok "legs.json installed (single source of truth for 5 legs)"
+
   # 4. Copy primary agents
   step "Installing primary agents"
   for agent in harness decide build verify; do
@@ -281,6 +295,22 @@ cmd_doctor() {
     fi
   done
 
+  # legs.json (single source of truth for leg rules)
+  local legs="$OPENCODE_DIR/plugin/legs.json"
+  if [[ -f "$legs" ]]; then
+    if jq -e '.legs | has("decision") and has("context") and has("execution") and has("verification") and has("ship")' \
+        "$legs" >/dev/null 2>&1; then
+      local leg_count; leg_count=$(jq -r '.legs | keys | length' "$legs")
+      ok "legs.json: $leg_count legs registered"
+    else
+      warn "legs.json present but missing one of decision/context/execution/verification/ship — run: harness install"
+      warns=$((warns+1))
+    fi
+  else
+    warn "Missing legs.json (~/.config/opencode/plugin/legs.json) — run: harness install"
+    warns=$((warns+1))
+  fi
+
   # Project-level (if in a project)
   if [[ -f .planning/HARNESS.md ]]; then
     local leg; leg=$(grep -E '^- \*\*Leg:\*\*' .planning/HARNESS.md | head -n1 | sed 's/.*: *//;s/ *$//')
@@ -337,6 +367,10 @@ cmd_status() {
       echo "  - $p"
     fi
   done
+  if [[ -f "$OPENCODE_DIR/plugin/legs.json" ]]; then
+    local lc; lc=$(jq -r '.legs | keys | length' "$OPENCODE_DIR/plugin/legs.json" 2>/dev/null || echo "?")
+    echo "  - legs.json ($lc legs)"
+  fi
 }
 
 # ---------------------------------------------------------------- uninstall
@@ -346,6 +380,7 @@ cmd_uninstall() {
   echo "  - $HARNESS_DIR"
   echo "  - $OPENCODE_DIR/agents/{harness,decide,build,verify}.md"
   echo "  - $OPENCODE_DIR/plugin/harness-{state,guard}.ts"
+  echo "  - $OPENCODE_DIR/plugin/legs.json"
   echo "  - $OPENCODE_DIR/skills/gstack"
   echo "  - GSD-installed agents/skills (gsd-*)"
   echo
@@ -358,6 +393,7 @@ cmd_uninstall() {
   rm -rf "$HARNESS_DIR"
   rm -f "$OPENCODE_DIR"/agents/{harness,decide,build,verify}.md
   rm -f "$OPENCODE_DIR"/plugin/harness-{state,guard}.ts
+  rm -f "$OPENCODE_DIR/plugin/legs.json"
   rm -rf "$OPENCODE_DIR/skills/gstack"
   # Remove GSD-installed skills/agents starting with gsd-
   if [[ -d "$OPENCODE_DIR/skills" ]]; then

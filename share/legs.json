@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "_note": "Single source of truth for the 5-leg state machine. Read by share/plugin/harness-guard.ts (allowedSkills/forbiddenSkills) and by bin/harness when deriving share/opencode.global.json permission unions. To add or remove a skill in a leg, edit this file, run `harness install`, and the guard + global config follow. Per-agent .md frontmatters in share/agents/*.md mirror these values; if they drift, this file wins. Fields nextLeg / autonomousMode are reserved for the long-running autonomy track (Phase 05) and intentionally absent here.",
+  "version": 1,
+  "legs": {
+    "decision": {
+      "ownerAgent": "decide",
+      "purpose": "Stress-test ideas, surface trade-offs, lock decisions into {phase}-CONTEXT.md. No code execution.",
+      "allowedSkills": [
+        "gstack-office-hours",
+        "gstack-plan-ceo-review",
+        "gstack-plan-eng-review",
+        "gstack-plan-design-review",
+        "gstack-autoplan",
+        "gstack-codex",
+        "gstack-browse",
+        "gsd-progress",
+        "gsd-discuss-phase",
+        "gsd-plan-phase"
+      ],
+      "forbiddenSkills": [
+        "test-driven-development",
+        "executing-plans",
+        "gsd-execute-phase",
+        "gstack-ship",
+        "gstack-review"
+      ],
+      "allowedTasks": [
+        "gsd-phase-researcher"
+      ],
+      "allowedCommands": [
+        "/gstack-office-hours",
+        "/gstack-plan-ceo-review",
+        "/gstack-plan-eng-review",
+        "/gstack-plan-design-review",
+        "/gstack-autoplan",
+        "/gstack-codex",
+        "/gstack-browse",
+        "/gsd-discuss-phase",
+        "/gsd-plan-phase",
+        "/gsd-progress"
+      ],
+      "bashPatterns": {
+        "git *": "ask",
+        "*": "ask"
+      }
+    },
+    "context": {
+      "ownerAgent": "harness",
+      "purpose": "Capture decisions per phase and produce atomic XML plans. Stays in the router agent because GSD commands carry the work.",
+      "allowedSkills": [
+        "gsd-discuss-phase",
+        "gsd-plan-phase",
+        "gsd-progress",
+        "writing-plans"
+      ],
+      "forbiddenSkills": [
+        "test-driven-development",
+        "executing-plans",
+        "gsd-execute-phase",
+        "gstack-ship"
+      ],
+      "allowedTasks": [
+        "gsd-progress"
+      ],
+      "allowedCommands": [
+        "/gsd-discuss-phase",
+        "/gsd-plan-phase",
+        "/gsd-progress"
+      ],
+      "bashPatterns": {
+        "git push --force*": "deny",
+        "rm -rf *": "deny",
+        "*": "allow"
+      }
+    },
+    "execution": {
+      "ownerAgent": "build",
+      "purpose": "Execute on-disk plans via strict TDD with atomic commits. No brainstorming, no replanning.",
+      "allowedSkills": [
+        "gsd-execute-phase",
+        "test-driven-development",
+        "executing-plans",
+        "subagent-driven-development",
+        "using-git-worktrees",
+        "systematic-debugging",
+        "gsd-progress",
+        "gsd-debug",
+        "verification-before-completion",
+        "finishing-a-development-branch"
+      ],
+      "forbiddenSkills": [
+        "gstack-office-hours",
+        "gstack-plan-ceo-review",
+        "gstack-autoplan",
+        "gstack-ship",
+        "gsd-new-project",
+        "gsd-new-milestone",
+        "brainstorming"
+      ],
+      "allowedTasks": [
+        "gsd-executor",
+        "gsd-debugger"
+      ],
+      "allowedCommands": [
+        "/gsd-execute-phase",
+        "/gsd-debug",
+        "/gsd-progress"
+      ],
+      "bashPatterns": {
+        "git commit *": "allow",
+        "git push --force*": "deny",
+        "git reset --hard *": "deny",
+        "git clean -fd*": "deny",
+        "rm -rf *": "deny",
+        "*": "allow"
+      }
+    },
+    "verification": {
+      "ownerAgent": "verify",
+      "purpose": "Read diffs, run cross-model + visual reviews, run manual UAT. Read-only on code.",
+      "allowedSkills": [
+        "gsd-verify-work",
+        "gstack-review",
+        "gstack-codex",
+        "gstack-browse",
+        "requesting-code-review",
+        "receiving-code-review",
+        "gsd-progress"
+      ],
+      "forbiddenSkills": [
+        "gsd-execute-phase",
+        "test-driven-development",
+        "gstack-office-hours",
+        "gstack-ship"
+      ],
+      "allowedTasks": [
+        "gsd-verifier"
+      ],
+      "allowedCommands": [
+        "/gstack-review",
+        "/gstack-codex",
+        "/gstack-browse",
+        "/gsd-verify-work",
+        "/gsd-progress"
+      ],
+      "bashPatterns": {
+        "git diff*": "allow",
+        "git log*": "allow",
+        "git status*": "allow",
+        "*": "ask"
+      }
+    },
+    "ship": {
+      "ownerAgent": "verify",
+      "purpose": "Milestone close: audit, ship, complete. Then hand back to harness for retro.",
+      "allowedSkills": [
+        "gstack-ship",
+        "gsd-audit-milestone",
+        "gsd-complete-milestone",
+        "gstack-retro",
+        "gsd-progress"
+      ],
+      "forbiddenSkills": [
+        "test-driven-development",
+        "executing-plans",
+        "gsd-execute-phase"
+      ],
+      "allowedTasks": [
+        "gsd-verifier"
+      ],
+      "allowedCommands": [
+        "/gsd-audit-milestone",
+        "/gstack-ship",
+        "/gsd-complete-milestone",
+        "/gstack-retro",
+        "/gsd-progress"
+      ],
+      "bashPatterns": {
+        "git diff*": "allow",
+        "git log*": "allow",
+        "git status*": "allow",
+        "*": "ask"
+      }
+    }
+  }
+}

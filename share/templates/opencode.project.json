@@ -1,10 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "_comment": "Project-level opencode config. Merged with ~/.config/opencode/opencode.json.",
+  "_note": "Project-level opencode config. Merged with ~/.config/opencode/opencode.json. Add project-specific overrides under sibling keys, e.g. \"model\": \"anthropic/claude-sonnet-4-6\" or \"permission\": { \"bash\": { \"pnpm test\": \"allow\" } }.",
 
   "instructions": ["AGENTS.md"]
-
-  // Add project-specific overrides here, e.g.:
-  // "model": "anthropic/claude-sonnet-4-6",
-  // "permission": { "bash": { "pnpm test": "allow" } }
 }
