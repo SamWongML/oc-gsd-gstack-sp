@@ -1,6 +1,6 @@
 # Phases 02–05 — opencode-harness Thinning + Long-Running Autonomy
 
-> **Status:** Phase 01 landed (`share/legs.json`, `share/templates/opencode.project.json` JSON fix, `bin/harness` install/doctor/uninstall/status wiring).
+> **Status:** Phases 01 and 03 landed. Phase 04 landed (idempotent install + dry-run). Phase 02 (plugin behavior) and Phase 05 (long-running autonomy) remain.
 > **Source plan:** `/Users/demon/.claude/plans/do-a-deep-research-virtual-wozniak.md` (full, ~9k words).
 > **This file:** actionable phase tracker so the next session can resume cold.
 
@@ -136,9 +136,14 @@
 
 ---
 
-## Phase 04 — Idempotent install + dry-run
+## Phase 04 — Idempotent install + dry-run ✅
 
 **Outcome:** `harness install` no longer clobbers a user's pre-existing `plugin` array; provides a dry-run preview; backs up before touching `opencode.json`.
+
+**Landed:** `bin/harness` `cmd_install` now:
+- Parses `--dry-run`; in that mode every step prints "would …" and the JSON merge prints `diff -u` instead of writing.
+- For the real merge: timestamped backup at `opencode.json.bak.YYYYmmdd-HHMMSS`, recursive harness-wins merge for scalars/objects, `unique` union for `plugin` and `instructions` arrays, and a "keep last 5 backups" GC step.
+- Verified via fixture: user's custom `plugin` entries survive; user-only top-level keys preserved; user's extra `permission.skill` entries survive at depth; harness scalar policies still override; merge is idempotent on a second run; GC trims old backups to 5.
 
 ### 04-01 — Backup + union-merge
 - File: `bin/harness` `cmd_install` step 5 (currently lines ~111–122).

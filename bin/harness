@@ -4,6 +4,7 @@
 #
 # Subcommands:
 #   install / update     install or refresh all three frameworks (idempotent)
+#                        accepts --dry-run to preview changes (no writes, no backup)
 #   init [size]          initialize harness in current project (mini|small|medium|large)
 #   doctor               verify install and configuration
 #   status               show what's installed and where
@@ -44,8 +45,9 @@ ${BOLD}harness${RESET} — opencode-harness CLI v$VERSION
 Usage: harness <command> [args]
 
 ${BOLD}Commands:${RESET}
-  install                Install or update everything (idempotent)
-  update                 Alias for 'install'
+  install [--dry-run]    Install or update everything (idempotent)
+                         --dry-run previews the opencode.json merge diff and skips writes
+  update [--dry-run]     Alias for 'install'
   init [size]            Initialize harness in current project
                          size: mini | small | medium | large (default: medium)
   doctor                 Verify install, run health checks
@@ -57,6 +59,7 @@ ${BOLD}Commands:${RESET}
 
 ${BOLD}Examples:${RESET}
   harness install                ${DIM}# first install or refresh after a few weeks${RESET}
+  harness install --dry-run      ${DIM}# preview what install would change${RESET}
   cd my-project && harness init medium   ${DIM}# new project${RESET}
   harness doctor                 ${DIM}# something feels off?${RESET}
 
@@ -68,51 +71,78 @@ cmd_version() { echo "$VERSION"; }
 
 # ---------------------------------------------------------------- install/update
 cmd_install() {
-  hdr "Installing opencode-harness ($VERSION)"
+  local dry_run=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --dry-run) dry_run=1; shift ;;
+      *) fail "Unknown install flag: $1 (try: harness help)" ;;
+    esac
+  done
+
+  if [[ $dry_run -eq 1 ]]; then
+    hdr "Dry-run: harness install ($VERSION) — no changes will be made"
+  else
+    hdr "Installing opencode-harness ($VERSION)"
+  fi
 
   require git; require node; require jq
   command -v opencode >/dev/null 2>&1 || fail "opencode not found. Install: brew install opencode"
 
-  mkdir -p "$OPENCODE_DIR"/{agents,plugin,skills}
+  [[ $dry_run -eq 0 ]] && mkdir -p "$OPENCODE_DIR"/{agents,plugin,skills}
 
   # 1. gsd-opencode (12 skills, ~33 subagents, ~85 slash commands)
   step "Installing gsd-opencode"
-  # Install first so the new structured layout (skills/gsd-*/SKILL.md) is in
-  # place before we sweep, minimizing the "no skills" window if anything goes
-  # wrong mid-swap.
-  npx --yes gsd-opencode@latest install --global >/dev/null
-  # Legacy cleanup: get-shit-done-cc --minimal shipped flat skills/gsd-*.md
-  # files; gsd-opencode uses skills/gsd-*/SKILL.md directories instead.
-  if [[ -d "$OPENCODE_DIR/skills" ]]; then
-    find "$OPENCODE_DIR/skills" -maxdepth 1 -type f -name 'gsd-*.md' -delete
+  if [[ $dry_run -eq 1 ]]; then
+    echo "  ${DIM}would run: npx --yes gsd-opencode@latest install --global${RESET}"
+    echo "  ${DIM}would sweep legacy flat $OPENCODE_DIR/skills/gsd-*.md files${RESET}"
+  else
+    # Install first so the new structured layout (skills/gsd-*/SKILL.md) is in
+    # place before we sweep, minimizing the "no skills" window if anything goes
+    # wrong mid-swap.
+    npx --yes gsd-opencode@latest install --global >/dev/null
+    # Legacy cleanup: get-shit-done-cc --minimal shipped flat skills/gsd-*.md
+    # files; gsd-opencode uses skills/gsd-*/SKILL.md directories instead.
+    if [[ -d "$OPENCODE_DIR/skills" ]]; then
+      find "$OPENCODE_DIR/skills" -maxdepth 1 -type f -name 'gsd-*.md' -delete
+    fi
+    ok "gsd-opencode installed/refreshed"
   fi
-  ok "gsd-opencode installed/refreshed"
 
   # 2. gstack with --prefix for namespacing
   local gstack_dir="$OPENCODE_DIR/skills/gstack"
   step "Installing gstack (namespaced)"
-  if [[ -d "$gstack_dir/.git" ]]; then
-    git -C "$gstack_dir" fetch --quiet --depth 1 origin main
-    git -C "$gstack_dir" reset --hard --quiet origin/main
+  if [[ $dry_run -eq 1 ]]; then
+    if [[ -d "$gstack_dir/.git" ]]; then
+      echo "  ${DIM}would: git fetch + reset --hard origin/main in $gstack_dir${RESET}"
+    else
+      echo "  ${DIM}would: git clone gstack into $gstack_dir${RESET}"
+    fi
+    echo "  ${DIM}would run: ./setup --host opencode --prefix${RESET}"
   else
-    rm -rf "$gstack_dir"
-    git clone --quiet --single-branch --depth 1 \
-      https://github.com/garrytan/gstack.git "$gstack_dir"
+    if [[ -d "$gstack_dir/.git" ]]; then
+      git -C "$gstack_dir" fetch --quiet --depth 1 origin main
+      git -C "$gstack_dir" reset --hard --quiet origin/main
+    else
+      rm -rf "$gstack_dir"
+      git clone --quiet --single-branch --depth 1 \
+        https://github.com/garrytan/gstack.git "$gstack_dir"
+    fi
+    (cd "$gstack_dir" && ./setup --host opencode --prefix >/dev/null 2>&1) \
+      || warn "gstack setup returned non-zero — install may still be usable"
+    ok "gstack installed/refreshed (commands prefixed as /gstack-*)"
   fi
-  (cd "$gstack_dir" && ./setup --host opencode --prefix >/dev/null 2>&1) \
-    || warn "gstack setup returned non-zero — install may still be usable"
-  ok "gstack installed/refreshed (commands prefixed as /gstack-*)"
 
   # 3. Copy harness plugins to opencode plugin dir
   step "Installing harness plugins"
-  cp -f "$SHARE/plugin/harness-state.ts" "$OPENCODE_DIR/plugin/"
-  cp -f "$SHARE/plugin/harness-guard.ts" "$OPENCODE_DIR/plugin/"
-  ok "Harness plugins installed (state + guard)"
+  if [[ $dry_run -eq 1 ]]; then
+    echo "  ${DIM}would copy: $SHARE/plugin/harness-{state,guard}.ts → $OPENCODE_DIR/plugin/${RESET}"
+  else
+    cp -f "$SHARE/plugin/harness-state.ts" "$OPENCODE_DIR/plugin/"
+    cp -f "$SHARE/plugin/harness-guard.ts" "$OPENCODE_DIR/plugin/"
+    ok "Harness plugins installed (state + guard)"
+  fi
 
   # 3b. Copy legs.json — single source of truth for leg rules.
-  # Plugins (Phase 02+) read this at module-load via dirname(import.meta.url).
-  # Today the guard still uses its hardcoded LEG_RULES; shipping the file now
-  # so installs in the field already have it when Phase 02 lands.
   step "Installing legs.json"
   if [[ ! -f "$SHARE/legs.json" ]]; then
     fail "Missing $SHARE/legs.json — harness install assets are incomplete."
@@ -120,44 +150,86 @@ cmd_install() {
   jq -e '.legs | has("decision") and has("context") and has("execution") and has("verification") and has("ship")' \
       "$SHARE/legs.json" >/dev/null \
     || fail "share/legs.json failed schema check (need legs: decision/context/execution/verification/ship)"
-  cp -f "$SHARE/legs.json" "$OPENCODE_DIR/plugin/legs.json"
-  ok "legs.json installed (single source of truth for 5 legs)"
+  if [[ $dry_run -eq 1 ]]; then
+    echo "  ${DIM}would copy: $SHARE/legs.json → $OPENCODE_DIR/plugin/legs.json${RESET}"
+  else
+    cp -f "$SHARE/legs.json" "$OPENCODE_DIR/plugin/legs.json"
+    ok "legs.json installed (single source of truth for 5 legs)"
+  fi
 
   # 4. Copy primary agents
   step "Installing primary agents"
-  for agent in harness decide build verify; do
-    cp -f "$SHARE/agents/$agent.md" "$OPENCODE_DIR/agents/$agent.md"
-  done
-  ok "Agents installed: harness | decide | build | verify"
+  if [[ $dry_run -eq 1 ]]; then
+    echo "  ${DIM}would copy: harness | decide | build | verify → $OPENCODE_DIR/agents/${RESET}"
+  else
+    for agent in harness decide build verify; do
+      cp -f "$SHARE/agents/$agent.md" "$OPENCODE_DIR/agents/$agent.md"
+    done
+    ok "Agents installed: harness | decide | build | verify"
+  fi
 
-  # 5. Merge global opencode.json (idempotent)
+  # 5. Merge global opencode.json (idempotent, with backup + array union)
   step "Merging ~/.config/opencode/opencode.json"
   local cfg="$OPENCODE_DIR/opencode.json"
+  # Harness scalars/objects override user values (e.g. permission policies stay
+  # canonical), but plugin/instructions arrays are union-merged so user's extra
+  # plugin entries survive a re-install.
+  local jq_merge='
+    .[0] as $user | .[1] as $harness |
+    $user * $harness
+    | .plugin       = ((($user.plugin       // []) + ($harness.plugin       // [])) | unique)
+    | .instructions = ((($user.instructions // []) + ($harness.instructions // [])) | unique)
+  '
   if [[ ! -f "$cfg" ]]; then
-    cp "$SHARE/opencode.global.json" "$cfg"
+    if [[ $dry_run -eq 1 ]]; then
+      echo "  ${DIM}would create $cfg from $SHARE/opencode.global.json${RESET}"
+    else
+      cp "$SHARE/opencode.global.json" "$cfg"
+      ok "opencode.json created (first install, no merge needed)"
+    fi
   else
-    # User-managed merge: harness keys overlay user keys, but user's other keys preserved.
-    local tmp; tmp=$(mktemp)
-    jq -s '.[0] * .[1]' "$cfg" "$SHARE/opencode.global.json" > "$tmp"
-    mv "$tmp" "$cfg"
+    if [[ $dry_run -eq 1 ]]; then
+      local merged
+      merged=$(jq -s "$jq_merge" "$cfg" "$SHARE/opencode.global.json")
+      echo "${DIM}--- diff: $cfg → merged ---${RESET}"
+      diff -u "$cfg" <(printf '%s\n' "$merged") || true
+      echo "${DIM}--- end diff ---${RESET}"
+    else
+      local backup="$cfg.bak.$(date +%Y%m%d-%H%M%S)"
+      cp "$cfg" "$backup"
+      local tmp; tmp=$(mktemp)
+      jq -s "$jq_merge" "$cfg" "$SHARE/opencode.global.json" > "$tmp"
+      mv "$tmp" "$cfg"
+      ok "opencode.json merged (backup: $backup)"
+      # GC old backups, keep last 5. `|| true` tolerates an empty match list.
+      ( ls -1t "$cfg".bak.* 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null ) || true
+    fi
   fi
-  ok "opencode.json updated (Superpowers plugin + permissions)"
 
   # 6. Global AGENTS.md
   step "Installing global AGENTS.md"
-  cp -f "$SHARE/AGENTS.md" "$OPENCODE_DIR/AGENTS.md"
-  ok "Global AGENTS.md installed"
+  if [[ $dry_run -eq 1 ]]; then
+    echo "  ${DIM}would copy: $SHARE/AGENTS.md → $OPENCODE_DIR/AGENTS.md${RESET}"
+  else
+    cp -f "$SHARE/AGENTS.md" "$OPENCODE_DIR/AGENTS.md"
+    ok "Global AGENTS.md installed"
+  fi
 
   echo
-  ok "${BOLD}Harness ready.${RESET}"
-  echo
-  echo "${BOLD}Next steps:${RESET}"
-  echo "  ${DIM}# In any project directory:${RESET}"
-  echo "  harness init"
-  echo "  opencode    ${DIM}# press Tab to switch agents: harness | decide | build | verify${RESET}"
-  echo
-  echo "  ${DIM}# Verify health:${RESET}"
-  echo "  harness doctor"
+  if [[ $dry_run -eq 1 ]]; then
+    ok "${BOLD}Dry-run complete.${RESET} No changes were made."
+    echo "  ${DIM}Re-run without --dry-run to apply.${RESET}"
+  else
+    ok "${BOLD}Harness ready.${RESET}"
+    echo
+    echo "${BOLD}Next steps:${RESET}"
+    echo "  ${DIM}# In any project directory:${RESET}"
+    echo "  harness init"
+    echo "  opencode    ${DIM}# press Tab to switch agents: harness | decide | build | verify${RESET}"
+    echo
+    echo "  ${DIM}# Verify health:${RESET}"
+    echo "  harness doctor"
+  fi
 }
 
 cmd_update() { cmd_install "$@"; }
