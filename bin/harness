@@ -250,21 +250,55 @@ cmd_doctor() {
     warn "Harness assets missing — run: harness install"; errs=$((errs+1))
   fi
 
-  # GSD
+  # gsd-opencode (structured layout: skills/gsd-*/SKILL.md + command/gsd/*.md)
   if [[ -d "$OPENCODE_DIR/skills" ]]; then
     local n=0
     for d in "$OPENCODE_DIR"/skills/gsd-*; do
       [[ -d "$d" ]] && n=$((n+1))
     done
     if [[ $n -gt 0 ]]; then
-      ok "GSD: $n skills installed"
+      ok "gsd-opencode: $n skill directories installed"
     else
-      warn "GSD skills not found in $OPENCODE_DIR/skills — run: harness install"
+      warn "gsd-opencode skills not found in $OPENCODE_DIR/skills — run: harness install"
+      warns=$((warns+1))
+    fi
+    # Required core skills (mirror permission.skill in opencode.global.json + legs.json)
+    local missing=()
+    for skill in gsd-discuss-phase gsd-plan-phase gsd-execute-phase \
+                 gsd-verify-work gsd-audit-milestone gsd-complete-milestone; do
+      [[ -d "$OPENCODE_DIR/skills/$skill" ]] || missing+=("$skill")
+    done
+    if [[ ${#missing[@]} -eq 0 ]]; then
+      ok "gsd-opencode core skills present (6/6)"
+    else
+      warn "gsd-opencode missing core skills: ${missing[*]} — run: harness install"
       warns=$((warns+1))
     fi
   else
-    warn "GSD skills not found in $OPENCODE_DIR/skills — run: harness install"
+    warn "gsd-opencode skills not found in $OPENCODE_DIR/skills — run: harness install"
     warns=$((warns+1))
+  fi
+
+  # gsd-opencode slash commands
+  if [[ -d "$OPENCODE_DIR/command/gsd" ]]; then
+    local cmd_count
+    cmd_count=$(find "$OPENCODE_DIR/command/gsd" -maxdepth 1 -type f -name '*.md' | wc -l | tr -d ' ')
+    if [[ "$cmd_count" -gt 0 ]]; then
+      ok "gsd-opencode commands: $cmd_count slash commands at command/gsd/"
+    else
+      warn "gsd-opencode command/gsd/ exists but has no *.md files — run: harness install"
+      warns=$((warns+1))
+    fi
+  else
+    warn "gsd-opencode command/gsd/ not found — run: harness install"
+    warns=$((warns+1))
+  fi
+
+  # gsd-opencode VERSION (informational; reports installed framework version)
+  if [[ -f "$OPENCODE_DIR/get-shit-done/VERSION" ]]; then
+    local gsd_version
+    gsd_version=$(head -n1 "$OPENCODE_DIR/get-shit-done/VERSION" | tr -d '[:space:]')
+    ok "gsd-opencode version: ${gsd_version:-unknown}"
   fi
 
   # gstack
