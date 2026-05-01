@@ -497,7 +497,7 @@ cmd_uninstall() {
   echo "  - $OPENCODE_DIR/plugin/legs.json"
   echo "  - $OPENCODE_DIR/.harness-heartbeat.json"
   echo "  - $OPENCODE_DIR/skills/gstack"
-  echo "  - GSD-installed agents/skills (gsd-*)"
+  echo "  - gsd-opencode (skills/gsd-*/, command/gsd/, agents/gsd-*.md, get-shit-done/)"
   echo
   echo "${BOLD}Your projects' .planning/ directories will NOT be touched.${RESET}"
   echo
@@ -511,12 +511,22 @@ cmd_uninstall() {
   rm -f "$OPENCODE_DIR/plugin/legs.json"
   rm -f "$OPENCODE_DIR/.harness-heartbeat.json" "$OPENCODE_DIR/.harness-heartbeat.json.tmp"
   rm -rf "$OPENCODE_DIR/skills/gstack"
-  # Remove GSD-installed skills/agents starting with gsd-
-  if [[ -d "$OPENCODE_DIR/skills" ]]; then
-    find "$OPENCODE_DIR/skills" -maxdepth 1 -type d -name 'gsd-*' -exec rm -rf {} +
-  fi
-  if [[ -d "$OPENCODE_DIR/agents" ]]; then
-    find "$OPENCODE_DIR/agents" -maxdepth 1 -type f -name 'gsd-*.md' -exec rm -f {} +
+
+  # Prefer the official uninstaller so future layout changes stay owned upstream.
+  step "Removing gsd-opencode"
+  if ! npx --yes gsd-opencode uninstall --global --force >/dev/null 2>&1; then
+    warn "gsd-opencode uninstall failed; falling back to manual cleanup"
+    if [[ -d "$OPENCODE_DIR/skills" ]]; then
+      find "$OPENCODE_DIR/skills" -maxdepth 1 -type d -name 'gsd-*' -exec rm -rf {} +
+      find "$OPENCODE_DIR/skills" -maxdepth 1 -type f -name 'gsd-*.md' -exec rm -f {} +
+    fi
+    if [[ -d "$OPENCODE_DIR/command/gsd" ]]; then
+      rm -rf "$OPENCODE_DIR/command/gsd"
+    fi
+    if [[ -d "$OPENCODE_DIR/agents" ]]; then
+      find "$OPENCODE_DIR/agents" -maxdepth 1 -type f -name 'gsd-*.md' -exec rm -f {} +
+    fi
+    rm -rf "$OPENCODE_DIR/get-shit-done"
   fi
 
   # Remove brew-managed symlink if it exists
