@@ -1,5 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
+  "_note": "DERIVED from share/legs.json — edit legs.json first.",
 
   "plugin": [
     "superpowers@git+https://github.com/obra/superpowers.git"
@@ -13,19 +14,10 @@
     "skill": {
       "*": "deny",
 
-      "gsd-progress": "allow",
-      "gsd-resume-work": "allow",
-      "gsd-pause-work": "allow",
-      "gsd-help": "allow",
-      "gsd-update": "allow",
-      "gsd-quick": "allow",
-      "gsd-new-project": "allow",
-      "gsd-new-milestone": "allow",
       "gsd-discuss-phase": "allow",
       "gsd-plan-phase": "allow",
       "gsd-execute-phase": "allow",
       "gsd-verify-work": "allow",
-      "gsd-debug": "allow",
       "gsd-audit-milestone": "allow",
       "gsd-complete-milestone": "allow",
 
@@ -59,18 +51,26 @@
 
     "task": {
       "*": "deny",
+
+      "gsd-phase-researcher": "allow",
       "gsd-planner": "allow",
-      "gsd-plan-checker": "allow",
+      "gsd-pattern-mapper": "allow",
+      "gsd-codebase-mapper": "allow",
+
       "gsd-executor": "allow",
-      "gsd-verifier": "allow",
       "gsd-debugger": "allow",
-      "gsd-phase-researcher": "allow"
+      "gsd-code-fixer": "allow",
+
+      "gsd-verifier": "allow",
+      "gsd-code-reviewer": "allow",
+      "gsd-eval-auditor": "allow",
+      "gsd-security-auditor": "allow"
     },
 
     "edit": "allow",
     "bash": {
       "git push --force*": "deny",
-      "git reset --hard *": "ask",
+      "git reset --hard *": "deny",
       "rm -rf *": "deny",
       "*": "allow"
     }
