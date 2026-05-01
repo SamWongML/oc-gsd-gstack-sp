@@ -13,9 +13,25 @@ Never reimplement another's command. Hop between frameworks via files on disk, n
   `/gstack-browse`, `/gstack-ship`, `/gstack-retro`, `/gstack-learn`,
   `/gstack-freeze`, `/gstack-guard`, `/gstack-careful`
 - **CONTEXT / spec / state** → GSD (auto-loads `.planning/`)
-  `/gsd-new-project`, `/gsd-new-milestone`, `/gsd-discuss-phase`, `/gsd-plan-phase`,
-  `/gsd-execute-phase`, `/gsd-verify-work`, `/gsd-progress`, `/gsd-resume-work`,
-  `/gsd-pause-work`, `/gsd-quick`, `/gsd-debug`
+
+  GSD ships two surfaces. They are gated differently — keep them straight.
+
+  **GSD slash commands (user-invoked; NOT gated by `permission.skill`)**
+  - `/gsd-progress` — routes to the next correct command (always your first move when uncertain)
+  - `/gsd-quick` — MINI/SMALL one-shot flow
+  - `/gsd-debug` — debug session
+  - `/gsd-help` — list available commands
+  - `/gsd-update` — refresh installed framework
+  - `/gsd-resume-work`, `/gsd-pause-work` — session continuity
+  - `/gsd-new-project`, `/gsd-new-milestone` — LARGE bootstrapping
+
+  **GSD skills (LLM-invoked; permission-gated; mirror `share/legs.json`)**
+  - `gsd-discuss-phase` — capture decisions per phase
+  - `gsd-plan-phase` — produce atomic XML plans
+  - `gsd-execute-phase` — wave execution with TDD inside
+  - `gsd-verify-work` — manual UAT walk-through
+  - `gsd-audit-milestone` — completeness check across the milestone
+  - `gsd-complete-milestone` — archive, tag, lock
 - **EXECUTION / TDD** → Superpowers (load via `skill` tool)
   `brainstorming`, `writing-plans`, `executing-plans`, `subagent-driven-development`,
   `test-driven-development`, `using-git-worktrees`, `systematic-debugging`,
