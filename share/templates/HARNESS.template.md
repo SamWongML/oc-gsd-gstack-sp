@@ -10,7 +10,7 @@
 - **Plan:** —
 - **Last command:** (none)
 - **Last atomic commit:** (none)
-- **Allowed next:** gstack-office-hours, gstack-plan-ceo-review, gstack-plan-eng-review, gstack-autoplan, gsd-progress, gsd-discuss-phase
+- **Allowed next:** gstack-office-hours, gstack-plan-ceo-review, gstack-plan-eng-review, gstack-plan-design-review, gstack-autoplan, gstack-codex, gstack-browse, gsd-discuss-phase, gsd-plan-phase, /gsd-progress
 - **Forbidden next:** test-driven-development, executing-plans, gsd-execute-phase, gstack-ship, gstack-review
 - **Open question for user:** What are we building?
 - **Exit criteria:**
