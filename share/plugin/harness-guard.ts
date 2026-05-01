@@ -5,114 +5,53 @@
 // physically prevents wrong calls from executing, even if the LLM ignored
 // AGENTS.md and the per-agent permissions somehow let the call through.
 //
-// It also appends a breadcrumb to HARNESS.md after every successful skill
-// load, so /gsd-progress and human recovery have a log to follow.
+// Rules come from legs.json sitting alongside this file (single source of
+// truth, shipped by `harness install`). HARNESS.md may override per-project
+// via "Allowed next" / "Forbidden next" fields.
 //
 // Loaded automatically by opencode at startup from ~/.config/opencode/plugin/.
 
 import type { Plugin } from "@opencode-ai/plugin"
 import { readFileSync, existsSync, appendFileSync } from "node:fs"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 
 interface LegRules {
   allowed: Set<string>
   forbidden: Set<string>
 }
 
-// Default rules per leg. The plugin first looks for explicit Allowed-next /
-// Forbidden-next fields in HARNESS.md (which take precedence). These are the
-// fallback when those fields are missing.
-const LEG_RULES: Record<string, LegRules> = {
-  decision: {
-    allowed: new Set([
-      "gstack-office-hours",
-      "gstack-plan-ceo-review",
-      "gstack-plan-eng-review",
-      "gstack-plan-design-review",
-      "gstack-autoplan",
-      "gstack-codex",
-      "gstack-browse",
-      "gsd-progress",
-      "gsd-discuss-phase",
-      "gsd-plan-phase",
-    ]),
-    forbidden: new Set([
-      "test-driven-development",
-      "executing-plans",
-      "gsd-execute-phase",
-      "gstack-ship",
-      "gstack-review",
-    ]),
-  },
-  context: {
-    allowed: new Set([
-      "gsd-discuss-phase",
-      "gsd-plan-phase",
-      "gsd-progress",
-      "writing-plans",
-    ]),
-    forbidden: new Set([
-      "test-driven-development",
-      "executing-plans",
-      "gsd-execute-phase",
-      "gstack-ship",
-    ]),
-  },
-  execution: {
-    allowed: new Set([
-      "gsd-execute-phase",
-      "test-driven-development",
-      "executing-plans",
-      "subagent-driven-development",
-      "using-git-worktrees",
-      "systematic-debugging",
-      "gsd-progress",
-      "gsd-debug",
-      "verification-before-completion",
-      "finishing-a-development-branch",
-    ]),
-    forbidden: new Set([
-      "gstack-office-hours",
-      "gstack-plan-ceo-review",
-      "gstack-autoplan",
-      "gstack-ship",
-      "gsd-new-project",
-      "gsd-new-milestone",
-      "brainstorming",
-    ]),
-  },
-  verification: {
-    allowed: new Set([
-      "gsd-verify-work",
-      "gstack-review",
-      "gstack-codex",
-      "gstack-browse",
-      "requesting-code-review",
-      "receiving-code-review",
-      "gsd-progress",
-    ]),
-    forbidden: new Set([
-      "gsd-execute-phase",
-      "test-driven-development",
-      "gstack-office-hours",
-      "gstack-ship",
-    ]),
-  },
-  ship: {
-    allowed: new Set([
-      "gstack-ship",
-      "gsd-audit-milestone",
-      "gsd-complete-milestone",
-      "gstack-retro",
-      "gsd-progress",
-    ]),
-    forbidden: new Set([
-      "test-driven-development",
-      "executing-plans",
-      "gsd-execute-phase",
-    ]),
-  },
+// -------------------- legs.json (single source of truth) --------------------
+
+const PLUGIN_DIR = dirname(fileURLToPath(import.meta.url))
+const LEGS_PATH = join(PLUGIN_DIR, "legs.json")
+
+function loadLegRules(): Record<string, LegRules> {
+  try {
+    const raw = readFileSync(LEGS_PATH, "utf8")
+    const data = JSON.parse(raw)
+    const legs = data?.legs
+    if (!legs || typeof legs !== "object") {
+      console.warn(`[harness-guard] ${LEGS_PATH} has no .legs object — guard fails open.`)
+      return {}
+    }
+    const out: Record<string, LegRules> = {}
+    for (const [name, leg] of Object.entries(legs as Record<string, any>)) {
+      const allowed = Array.isArray(leg?.allowedSkills) ? leg.allowedSkills : []
+      const forbidden = Array.isArray(leg?.forbiddenSkills) ? leg.forbiddenSkills : []
+      out[name] = {
+        allowed: new Set(allowed),
+        forbidden: new Set(forbidden),
+      }
+    }
+    return out
+  } catch (err) {
+    console.warn(`[harness-guard] failed to load ${LEGS_PATH}: ${(err as Error).message} — guard fails open.`)
+    return {}
+  }
 }
+
+const LEG_RULES: Record<string, LegRules> = loadLegRules()
 
 interface HarnessSnapshot {
   leg: string
@@ -137,7 +76,7 @@ function loadHarness(directory: string): HarnessSnapshot | null {
     return null
   }
 
-  // Honor explicit allow/forbid lists if present (override defaults)
+  // Honor explicit allow/forbid lists if present (per-project override)
   const allowedField = /^- \*\*Allowed next:\*\*\s*(.+)$/m.exec(content)
   const forbiddenField = /^- \*\*Forbidden next:\*\*\s*(.+)$/m.exec(content)
 
