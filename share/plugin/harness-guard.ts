@@ -9,6 +9,9 @@
 // truth, shipped by `harness install`). HARNESS.md may override per-project
 // via "Allowed next" / "Forbidden next" fields.
 //
+// On hard abort, surfaces a TUI toast (best-effort, deduped per session) so
+// the operator sees the violation in the UI in addition to the abort string.
+//
 // Loaded automatically by opencode at startup from ~/.config/opencode/plugin/.
 
 import type { Plugin } from "@opencode-ai/plugin"
@@ -104,7 +107,11 @@ function appendBreadcrumb(directory: string, skillName: string): void {
   }
 }
 
-export const HarnessGuard: Plugin = async ({ directory }) => {
+// -------------------- toast dedupe (per-session) --------------------
+
+const toastDedupe = new Set<string>()
+
+export const HarnessGuard: Plugin = async ({ directory, client }) => {
   return {
     // -------------------- HARD ABORT on forbidden skill calls --------------------
     "tool.execute.before": async (input: any, output: any) => {
@@ -115,22 +122,46 @@ export const HarnessGuard: Plugin = async ({ directory }) => {
       if (!snap) return // No HARNESS.md or unknown leg — fail open.
 
       const skillName: string | undefined = input?.args?.name
-      if (!skillName) return
-
-      if (snap.rules.forbidden.has(skillName)) {
-        output.abort =
-          `Harness violation: skill '${skillName}' is forbidden in leg '${snap.leg}'. ` +
-          `Allowed-next: ${[...snap.rules.allowed].join(", ")}. ` +
-          `Run /gsd-progress for the next correct action, or update .planning/HARNESS.md to change leg.`
+      if (!skillName) {
+        // Runtime contract: skill tool should always carry args.name. If not, log once.
+        console.warn("[harness-guard] skill tool invoked without args.name; cannot evaluate.")
         return
       }
 
-      if (snap.rules.allowed.size > 0 && !snap.rules.allowed.has(skillName)) {
-        output.abort =
+      let abortMsg: string | undefined
+
+      if (snap.rules.forbidden.has(skillName)) {
+        abortMsg =
+          `Harness violation: skill '${skillName}' is forbidden in leg '${snap.leg}'. ` +
+          `Allowed-next: ${[...snap.rules.allowed].join(", ")}. ` +
+          `Run /gsd-progress for the next correct action, or update .planning/HARNESS.md to change leg.`
+      } else if (snap.rules.allowed.size > 0 && !snap.rules.allowed.has(skillName)) {
+        abortMsg =
           `Harness violation: skill '${skillName}' is not in the allow-list for leg '${snap.leg}'. ` +
           `Allowed-next: ${[...snap.rules.allowed].join(", ")}. ` +
           `Run /gsd-progress to find the right next command.`
-        return
+      }
+
+      if (!abortMsg) return
+
+      output.abort = abortMsg
+
+      // Per-session dedupe: only toast once per (leg, skill) pair.
+      const key = `${snap.leg}:${skillName}`
+      if (!toastDedupe.has(key)) {
+        toastDedupe.add(key)
+        try {
+          await client.tui.showToast({
+            body: {
+              variant: "warning",
+              title: "Harness Warning",
+              message: abortMsg,
+              duration: 6000,
+            },
+          })
+        } catch {
+          // Headless mode (no TUI) — toast endpoint 404s. Hard abort already set.
+        }
       }
     },
 
