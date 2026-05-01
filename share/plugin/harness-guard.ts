@@ -15,7 +15,7 @@
 // Loaded automatically by opencode at startup from ~/.config/opencode/plugin/.
 
 import type { Plugin } from "@opencode-ai/plugin"
-import { readFileSync, existsSync, appendFileSync } from "node:fs"
+import { readFileSync, existsSync, appendFileSync, writeFileSync, renameSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -96,6 +96,11 @@ function loadHarness(directory: string): HarnessSnapshot | null {
   return { leg, rules }
 }
 
+// -------------------- breadcrumb append + trim --------------------
+
+const BREADCRUMB_LIMIT = 50
+const BREADCRUMB_LINE_RE = /^- \d{4}-\d{2}-\d{2}T[^\s]+\s+skill:\s+/
+
 function appendBreadcrumb(directory: string, skillName: string): void {
   const harnessFile = join(directory, ".planning", "HARNESS.md")
   if (!existsSync(harnessFile)) return
@@ -103,7 +108,37 @@ function appendBreadcrumb(directory: string, skillName: string): void {
   try {
     appendFileSync(harnessFile, `\n- ${stamp} skill: ${skillName}`)
   } catch {
-    /* breadcrumb is best-effort */
+    return // append failed; nothing to trim
+  }
+  trimBreadcrumbs(harnessFile)
+}
+
+function trimBreadcrumbs(harnessFile: string): void {
+  try {
+    const content = readFileSync(harnessFile, "utf8")
+    const lines = content.split("\n")
+
+    let breadcrumbCount = 0
+    for (const line of lines) {
+      if (BREADCRUMB_LINE_RE.test(line)) breadcrumbCount++
+    }
+    if (breadcrumbCount <= BREADCRUMB_LIMIT) return
+
+    let toDrop = breadcrumbCount - BREADCRUMB_LIMIT
+    const kept: string[] = []
+    for (const line of lines) {
+      if (BREADCRUMB_LINE_RE.test(line) && toDrop > 0) {
+        toDrop--
+        continue
+      }
+      kept.push(line)
+    }
+    const newContent = kept.join("\n")
+    const tmp = harnessFile + ".tmp"
+    writeFileSync(tmp, newContent)
+    renameSync(tmp, harnessFile)
+  } catch {
+    /* trim is best-effort */
   }
 }
 
