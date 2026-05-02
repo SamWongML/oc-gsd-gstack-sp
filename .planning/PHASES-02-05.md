@@ -1,16 +1,18 @@
 # Phases 02–05 — opencode-harness Thinning + Long-Running Autonomy
 
-> **Status:** Phases 01 and 03 landed. Phase 04 landed (idempotent install + dry-run). Phase 02 (plugin behavior) and Phase 05 (long-running autonomy) remain.
+> **Status:** Phases 01, 02, 03, 04, 05 all landed. Track is complete.
 > **Source plan:** `/Users/demon/.claude/plans/do-a-deep-research-virtual-wozniak.md` (full, ~9k words).
 > **This file:** actionable phase tracker so the next session can resume cold.
 
 ---
 
-## Phase 02 — Plugins consume legs.json + fail-loud + observability
+## Phase 02 — Plugins consume legs.json + fail-loud + observability ✅
 
 **Outcome:** legs.json becomes the *actual* source of truth (not just a shipped file). Failures surface visibly. Heartbeat gives operators a way to verify the harness is alive.
 
-### 02-01 — `harness-guard.ts` reads `legs.json` at module load
+**Landed:** commits `9fa6f30` (02-01), `9def0e7` (02-02), `5dff1d3` (02-03), `28ff50c` (02-04), `a57ac31` (02-05), `a2fba1c` (02-06).
+
+### 02-01 — `harness-guard.ts` reads `legs.json` at module load ✅
 - File: `share/plugin/harness-guard.ts` (currently 208 lines).
 - Drop the 90-line hardcoded `LEG_RULES` const (lines 25–115).
 - Resolve the JSON path next to the plugin: `dirname(new URL(import.meta.url).pathname)` → `legs.json`.
@@ -19,13 +21,13 @@
 - Fields used: `allowedSkills`, `forbiddenSkills`. Other fields (`ownerAgent`, `allowedTasks`, `allowedCommands`, `bashPatterns`) are reserved for later phases and other consumers.
 - **Behavior must match Phase 01 counts exactly** (decision 10/5, context 4/4, execution 10/7, verification 7/4, ship 5/3) — Phase 01 was written specifically to enable this swap.
 
-### 02-02 — `harness-state.ts` injects `<harness-warning>` on missing/unknown leg
+### 02-02 — `harness-state.ts` injects `<harness-warning>` on missing/unknown leg ✅
 - File: `share/plugin/harness-state.ts`.
 - When `Leg:` field is missing from `.planning/HARNESS.md` or doesn't match a known leg in `legs.json`, push a `<harness-warning>` block onto `output.system` (in addition to today's `<harness-state>`).
 - Body: `unknown leg '<value>' — guard fails open. Edit .planning/HARNESS.md or run /gsd-progress.`
 - This is the backup channel for headless `opencode run` where the toast (02-03) won't appear.
 
-### 02-03 — TUI toast on harness violations + per-session dedupe
+### 02-03 — TUI toast on harness violations + per-session dedupe ✅
 - File: `share/plugin/harness-guard.ts`.
 - Take `client` from the plugin factory destructure (`async ({ directory, client }) => ...`).
 - On hard abort, fire `client.tui.showToast({ body: { variant: "warning", title: "Harness Warning", message, duration: 6000 } })`.
@@ -33,7 +35,7 @@
 - Dedupe via a module-level `Set<string>` keyed by `${leg}:${skillName}` so each warning toasts once per session.
 - Verified API in `@opencode-ai/sdk@1.14.30` types per the Plan agent's research.
 
-### 02-04 — `trimBreadcrumbs` after every append
+### 02-04 — `trimBreadcrumbs` after every append ✅
 - File: `share/plugin/harness-guard.ts` `appendBreadcrumb` function.
 - After `appendFileSync`, run `trimBreadcrumbs(harnessFile)`:
   1. Read file.
@@ -42,7 +44,7 @@
   4. Atomic write: `writeFileSync(file + '.tmp', combined); renameSync(file + '.tmp', file)`.
 - Fixes the "last 50 kept" claim in `share/templates/HARNESS.template.md` that today is documented but unenforced.
 
-### 02-05 — Heartbeat file from both plugins
+### 02-05 — Heartbeat file from both plugins ✅
 - Path: `~/.config/opencode/.harness-heartbeat.json` (or pass via `directory` if scoped per-project — pick one and document).
 - Schema:
   ```json
@@ -63,7 +65,7 @@
 - `harness-guard.ts` updates `lastIntercept` / `interceptCount` on every `tool.execute.before` it inspects, and `lastAbort` / `abortCount` / `lastAbortedSkill` on hard aborts.
 - `harness doctor` reads and prints `lastInjection` + counts.
 
-### 02-06 — `harness self-test` subcommand
+### 02-06 — `harness self-test` subcommand ✅
 - New subcommand in `bin/harness` (model after `cmd_doctor`).
 - Checks:
   1. Plugin files exist + parse as TypeScript (run `node --check` via Bun, or just verify `default export` with grep).
@@ -74,11 +76,13 @@
 
 ---
 
-## Phase 03 — `gsd-opencode` migration
+## Phase 03 — `gsd-opencode` migration ✅
 
 **Outcome:** `get-shit-done-cc --minimal` (6 skills, 6 subagents, flat `gsd-*.md` layout) → `gsd-opencode@latest` (12 skills, 33 subagents, ~85 commands, structured layout). Permission allow-lists corrected to reflect skills-vs-commands taxonomy.
 
-### 03-01 — Install line swap
+**Landed:** commits `7ef296a` (03-01), `5c0597f` (03-02), `27b490c` (03-03), `8b7dfed` (03-04), `e457b60` (03-05), `b2c98c8` (03-06), `76a578b` (03-07).
+
+### 03-01 — Install line swap ✅
 - File: `bin/harness` `cmd_install` step 1 (currently line ~80).
 - Replace:
   ```bash
@@ -91,7 +95,7 @@
 - **Order matters:** run gsd-opencode install *first*, then clean up old flat `gsd-*.md` files in `~/.config/opencode/skills/` and `~/.config/opencode/agents/`. This minimizes the "no skills installed" window.
 - Cleanup pattern: any `gsd-*.md` flat file in `skills/` (gsd-opencode uses `skills/gsd-*/SKILL.md` directories instead).
 
-### 03-02 — Uninstall path
+### 03-02 — Uninstall path ✅
 - File: `bin/harness` `cmd_uninstall`.
 - Replace direct `find ... rm -rf` with:
   ```bash
@@ -100,7 +104,7 @@
   ```
 - Manual fallback targets the new layout: `skills/gsd-*/`, `command/gsd/`, `agents/gsd-*.md`, `get-shit-done/`.
 
-### 03-03 — Correct `share/opencode.global.json`
+### 03-03 — Correct `share/opencode.global.json` ✅
 - `permission.skill` 15 → 12. Drop these (they are slash commands, not skills):
   - `gsd-quick`, `gsd-progress`, `gsd-debug`, `gsd-resume-work`, `gsd-pause-work`, `gsd-help`, `gsd-update`, `gsd-new-project`, `gsd-new-milestone`
 - Keep these 12 as real skills:
@@ -113,22 +117,22 @@
 - Add `_note: "DERIVED from share/legs.json — edit legs.json first."` at top.
 - Optionally: have `bin/harness install` recompute the union from `legs.json` so the file is truly derived (stretch goal — defer if it complicates the merge).
 
-### 03-04 — Per-agent frontmatter corrections
+### 03-04 — Per-agent frontmatter corrections ✅
 - Files: `share/agents/{harness,decide,build,verify}.md`.
 - Remove command-name entries from `permission.skill` blocks (commands aren't skill-tool entries).
 - Add new subagents to `permission.task` per leg (mirror legs.json `allowedTasks` once Phase 03-03 expands them).
 - `harness.md` becomes `skill: { "*": "deny" }` — the router uses only slash commands (verify against final taxonomy first).
 
-### 03-05 — `share/AGENTS.md` clarity
+### 03-05 — `share/AGENTS.md` clarity ✅
 - Add explicit subsections in the framework-ownership area:
   - **GSD slash commands (user-invoked):** `/gsd-progress`, `/gsd-quick`, `/gsd-debug`, `/gsd-help`, etc. Listed with one-line descriptions. Not gated by `permission.skill`.
   - **GSD skills (LLM-invoked, permission-gated):** the 12 above. Match `legs.json`.
 
-### 03-06 — HARNESS template
+### 03-06 — HARNESS template ✅
 - File: `share/templates/HARNESS.template.md`.
 - Update `Allowed next` and `Forbidden next` initial values to match the new skill-vs-command taxonomy per leg.
 
-### 03-07 — Doctor coverage
+### 03-07 — Doctor coverage ✅
 - File: `bin/harness` `cmd_doctor`.
 - Validate the 12 gsd-opencode skill *directories* (not flat files): `for skill in gsd-discuss-phase gsd-plan-phase ...; do [[ -d "$OPENCODE_DIR/skills/$skill" ]] || warn ...; done`.
 - Validate `~/.config/opencode/command/gsd/` exists and has `*.md` files.
@@ -140,12 +144,12 @@
 
 **Outcome:** `harness install` no longer clobbers a user's pre-existing `plugin` array; provides a dry-run preview; backs up before touching `opencode.json`.
 
-**Landed:** `bin/harness` `cmd_install` now:
+**Landed:** commit `40e5cc3`. `bin/harness` `cmd_install` now:
 - Parses `--dry-run`; in that mode every step prints "would …" and the JSON merge prints `diff -u` instead of writing.
 - For the real merge: timestamped backup at `opencode.json.bak.YYYYmmdd-HHMMSS`, recursive harness-wins merge for scalars/objects, `unique` union for `plugin` and `instructions` arrays, and a "keep last 5 backups" GC step.
 - Verified via fixture: user's custom `plugin` entries survive; user-only top-level keys preserved; user's extra `permission.skill` entries survive at depth; harness scalar policies still override; merge is idempotent on a second run; GC trims old backups to 5.
 
-### 04-01 — Backup + union-merge
+### 04-01 — Backup + union-merge ✅
 - File: `bin/harness` `cmd_install` step 5 (currently lines ~111–122).
 - Replace `jq -s '.[0] * .[1]'` with:
   ```bash
@@ -161,7 +165,7 @@
 - Print backup path so user knows where to revert.
 - Optionally garbage-collect old backups (keep last 5).
 
-### 04-02 — `--dry-run` flag
+### 04-02 — `--dry-run` flag ✅
 - File: `bin/harness` dispatcher + `cmd_install`.
 - Parse `--dry-run` from args. When set:
   - Run the same merge through `diff <(cat "$cfg") -` (or `git diff --no-index`).
@@ -171,11 +175,13 @@
 
 ---
 
-## Phase 05 — Long-running autonomy
+## Phase 05 — Long-running autonomy ✅
 
 **Outcome:** A `harness init medium` job can run end-to-end without manual nudging. Compaction can't drop state. Idle ticks resume from the canonical recovery command. Successful verification auto-advances to ship.
 
-### 05-01 — Add `nextLeg` to `share/legs.json`
+**Landed:** advance graph + autonomousMode in `share/legs.json`; `Autonomous:` field in `share/templates/HARNESS.template.md` substituted by `bin/harness cmd_init` from `legs.json` per size; `experimental.session.compacting` hook in `share/plugin/harness-state.ts` seeds the compaction summary; `event` hook in `share/plugin/harness-guard.ts` deflects on `session.idle` via `client.tui.appendPrompt({ body: { text: "\n/gsd-progress" } })` when `Autonomous: true` and `Leg: !== done`; `tool.execute.after` auto-advances `Leg:` atomically (`gsd-verify-work` ✓ in `verification` → `nextLeg`; `gstack-ship` ✓ in `ship` → `done`) with breadcrumb + heartbeat updates; `harness self-test` validates the advance graph (no cycles, terminal `ship`, every `nextLeg` resolves), `autonomousMode` coverage, and the project's `Autonomous:` field + autonomy-heartbeat recency; docs (DESIGN, HARDENING, TROUBLESHOOTING, README) realigned around the implemented Layer 4b + Layer 5 mechanics.
+
+### 05-01 — Add `nextLeg` to `share/legs.json` ✅
 - New per-leg field in `share/legs.json`:
   ```json
   "decision":     { ..., "nextLeg": "context" },
@@ -186,19 +192,19 @@
   ```
 - Updates `harness self-test` Phase 02-06 check: validate no cycles, terminal `ship`.
 
-### 05-02 — `autonomousMode` toggle
+### 05-02 — `autonomousMode` toggle ✅
 - New top-level key in `share/legs.json`: `"autonomousMode": { "mini": false, "small": false, "medium": true, "large": true }`.
 - `bin/harness cmd_init` reads the flag for the requested size and writes `Autonomous: true|false` to the new HARNESS.md.
 - `share/templates/HARNESS.template.md` gets a `__AUTONOMOUS__` slot that `cmd_init` substitutes (mirror existing `__SIZE__`).
 - User can flip per-project by editing the field.
 
-### 05-03 — Compaction-survival hook
+### 05-03 — Compaction-survival hook ✅
 - File: `share/plugin/harness-state.ts`.
 - Register `experimental.session.compacting` alongside `experimental.chat.system.transform`.
 - Compaction handler pushes the current `<harness-state>` block into `output.context` so the post-compaction summary inherits leg, allowed/forbidden, last-known phase ID.
 - Layer 3 already re-injects every turn — this hook makes the compaction summary itself state-aware so the very first post-compaction turn cannot drift.
 
-### 05-04 — Idle deflection (Layer 5 implementation)
+### 05-04 — Idle deflection (Layer 5 implementation) ✅
 - File: `share/plugin/harness-guard.ts`.
 - Register `session.idle`.
 - On idle:
@@ -210,7 +216,7 @@
 - `tui.appendPrompt` is a real SDK call (verified). Per GitHub #17412 we cannot inject AI-visible messages, but we can enqueue the next slash command — that's the workable form of Layer 5.
 - Headless mode degrades gracefully (the call 404s); compaction + per-turn re-injection still hold.
 
-### 05-05 — Auto-advance on exit-criteria match
+### 05-05 — Auto-advance on exit-criteria match ✅
 - File: `share/plugin/harness-guard.ts` `tool.execute.after`.
 - Detect sentinels:
   - `gsd-verify-work` returns success in `verification` leg → advance to `ship`.
@@ -220,13 +226,13 @@
 - Update heartbeat `lastAutoAdvance`.
 - Eliminates the human "Tab to next agent" step that today gates progression.
 
-### 05-06 — Self-test extensions
+### 05-06 — Self-test extensions ✅
 - Extend `harness self-test` (Phase 02-06):
   - Validate `legs.json` advance graph: no cycles, terminal `ship`, every `nextLeg` resolves to a known key.
   - Check `Autonomous:` field present in `.planning/HARNESS.md`.
   - Recency check on `lastIdleDeflection` and `lastAutoAdvance` (warn if autonomous mode enabled but neither has fired in N turns).
 
-### 05-07 — Documentation realignment
+### 05-07 — Documentation realignment ✅
 - Files: `docs/DESIGN.md`, `docs/HARDENING.md`, `docs/TROUBLESHOOTING.md`, `README.md`.
 - Re-purpose Layer 5 from "documented-only" to "implemented as `tui.appendPrompt` deflection on `session.idle`."
 - Update the failure-mode table.

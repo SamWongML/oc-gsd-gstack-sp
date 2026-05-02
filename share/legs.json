@@ -1,10 +1,17 @@
 {
   "$schema": "https://json-schema.org/draft-07/schema#",
-  "_note": "Single source of truth for the 5-leg state machine. Read by share/plugin/harness-guard.ts (allowedSkills/forbiddenSkills) and by bin/harness when deriving share/opencode.global.json permission unions. To add or remove a skill in a leg, edit this file, run `harness install`, and the guard + global config follow. Per-agent .md frontmatters in share/agents/*.md mirror these values; if they drift, this file wins. Fields nextLeg / autonomousMode are reserved for the long-running autonomy track (Phase 05) and intentionally absent here.",
+  "_note": "Single source of truth for the 5-leg state machine. Read by share/plugin/harness-guard.ts (allowedSkills/forbiddenSkills/nextLeg) and by bin/harness when deriving share/opencode.global.json permission unions. To add or remove a skill in a leg, edit this file, run `harness install`, and the guard + global config follow. Per-agent .md frontmatters in share/agents/*.md mirror these values; if they drift, this file wins. nextLeg defines the linear advance graph (terminal at ship); autonomousMode opts a project size into idle deflection + auto-advance.",
   "version": 1,
+  "autonomousMode": {
+    "mini": false,
+    "small": false,
+    "medium": true,
+    "large": true
+  },
   "legs": {
     "decision": {
       "ownerAgent": "decide",
+      "nextLeg": "context",
       "purpose": "Stress-test ideas, surface trade-offs, lock decisions into {phase}-CONTEXT.md. No code execution.",
       "allowedSkills": [
         "gstack-office-hours",
@@ -50,6 +57,7 @@
     },
     "context": {
       "ownerAgent": "harness",
+      "nextLeg": "execution",
       "purpose": "Capture decisions per phase and produce atomic XML plans. Stays in the router agent because GSD commands carry the work.",
       "allowedSkills": [
         "gsd-discuss-phase",
@@ -77,6 +85,7 @@
     },
     "execution": {
       "ownerAgent": "build",
+      "nextLeg": "verification",
       "purpose": "Execute on-disk plans via strict TDD with atomic commits. No brainstorming, no replanning.",
       "allowedSkills": [
         "gsd-execute-phase",
@@ -120,6 +129,7 @@
     },
     "verification": {
       "ownerAgent": "verify",
+      "nextLeg": "ship",
       "purpose": "Read diffs, run cross-model + visual reviews, run manual UAT. Read-only on code.",
       "allowedSkills": [
         "gsd-verify-work",
@@ -158,6 +168,7 @@
     },
     "ship": {
       "ownerAgent": "verify",
+      "nextLeg": null,
       "purpose": "Milestone close: audit, ship, complete. Then hand back to harness for retro.",
       "allowedSkills": [
         "gstack-ship",

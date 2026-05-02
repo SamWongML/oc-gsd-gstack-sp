@@ -35,12 +35,20 @@ Slogan: **gstack thinks → GSD stabilizes → Superpowers executes**.
 ## Defense-in-depth: 5 enforcement layers
 
 ```text
-0  AGENTS.md                    soft, declarative
-1  Per-agent permission.skill   STRUCTURAL — skills absent from agent's tool list
-2  Per-agent permission.task    STRUCTURAL — subagents removed from Task tool
-3  chat.system.transform        ACTIVE — re-injects HARNESS.md state every turn
-4  tool.execute.before          HARD — aborts forbidden skill calls before they run
-5  session.idle                 DEFLECTION — re-prompts if leg's exit criteria unmet
+0  AGENTS.md                          soft, declarative
+1  Per-agent permission.skill         STRUCTURAL — skills absent from agent's tool list
+2  Per-agent permission.task          STRUCTURAL — subagents removed from Task tool
+3  chat.system.transform +
+   experimental.session.compacting    ACTIVE — re-injects HARNESS.md state every turn AND
+                                      seeds the compaction summary so post-compaction
+                                      turns inherit leg / allowed / forbidden / phase
+4  tool.execute.before                HARD — aborts forbidden skill calls before they run
+4b tool.execute.after                 ADVANCE — auto-advances Leg: in HARNESS.md when a
+                                      sentinel skill succeeds (gsd-verify-work → ship,
+                                      gstack-ship → done)
+5  session.idle (event hook)          DEFLECTION — when Autonomous: true and leg ≠ done,
+                                      enqueues "/gsd-progress" via tui.appendPrompt so
+                                      the next turn picks up automatically
 ```
 
 Layers 1 and 2 use opencode's deny-by-default permission model. The denied
@@ -51,6 +59,13 @@ Layer 4 is the killer feature. The `tool.execute.before` plugin reads
 `.planning/HARNESS.md` on every tool call, looks at the current leg, and
 aborts skills not allowed in that leg with a redirect message. **One file
 edit reconfigures everything live — no restart.**
+
+Layer 5 is opt-in via `Autonomous: true` (default for `medium` / `large`
+sizes per `share/legs.json`'s `autonomousMode` block). It uses the
+`tui.appendPrompt` SDK call — which enqueues a slash command rather than
+injecting an AI-visible message — to drive the canonical `/gsd-progress`
+recovery path when the assistant goes idle. Headless `opencode run` falls
+back gracefully: the call 404s, but Layer 3 + 4 still hold.
 
 ## Footprint
 
@@ -73,10 +88,11 @@ The reductions come from:
 
 ## State machine: `.planning/HARNESS.md`
 
-The single state file the guard plugin reads. Three things matter:
+The single state file the guard plugin reads. Four things matter:
 
 ```markdown
-- **Leg:** decision | context | execution | verification | ship
+- **Leg:** decision | context | execution | verification | ship | done
+- **Autonomous:** true | false
 - **Allowed next:** comma-separated list of skill names
 - **Forbidden next:** comma-separated list of skill names
 ```
@@ -85,6 +101,27 @@ If `Allowed next` / `Forbidden next` are present, they override the plugin's
 defaults for the current leg. If they're absent, the plugin uses built-in
 defaults per leg. Either way, you can edit the file and the guard reconfigures
 on the next tool call.
+
+`Autonomous: true` opts the project into Layer 5 idle deflection and Layer 4b
+auto-advance. `Leg: done` is the terminal marker the auto-advance writes after
+a successful `gstack-ship`; deflection stops at that point. To disable
+autonomy mid-project, set `Autonomous: false` and save — the plugin reads it
+on the next idle tick.
+
+## Autonomous mode
+
+Sourced from `share/legs.json`:
+
+```json
+"autonomousMode": { "mini": false, "small": false, "medium": true, "large": true }
+```
+
+`harness init <size>` substitutes the matching value into `Autonomous:`. The
+small/mini sizes default off because they finish in a single turn; medium and
+large benefit from the harness driving itself across the leg sequence
+`decision → context → execution → verification → ship → done`. The advance
+graph is encoded per-leg as `nextLeg`; `harness self-test` validates it for
+cycles and a terminal `ship`.
 
 ## Why this design
 

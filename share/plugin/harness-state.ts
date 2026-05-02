@@ -118,21 +118,25 @@ function field(state: string, name: string): string {
   return m ? m[1].trim() : ""
 }
 
-export const HarnessState: Plugin = async ({ directory }) => {
-  return {
-    "experimental.chat.system.transform": async (_input: any, output: any) => {
-      const state = loadState(directory)
-      if (!state) return
+interface RenderedState {
+  block: string
+  warning: string | null
+  legRaw: string
+}
 
-      const size = field(state, "Size") || "unset"
-      const legRaw = field(state, "Leg")
-      const leg = legRaw || "unset"
-      const phase = field(state, "Phase") || "—"
-      const plan = field(state, "Plan") || "—"
-      const allowed = field(state, "Allowed next") || "(none specified)"
-      const forbidden = field(state, "Forbidden next") || "(none specified)"
+function renderState(directory: string): RenderedState | null {
+  const state = loadState(directory)
+  if (!state) return null
 
-      const block = `<harness-state>
+  const size = field(state, "Size") || "unset"
+  const legRaw = field(state, "Leg")
+  const leg = legRaw || "unset"
+  const phase = field(state, "Phase") || "—"
+  const plan = field(state, "Plan") || "—"
+  const allowed = field(state, "Allowed next") || "(none specified)"
+  const forbidden = field(state, "Forbidden next") || "(none specified)"
+
+  const block = `<harness-state>
   Size: ${size}
   Leg: ${leg}
   Phase: ${phase}
@@ -146,17 +150,27 @@ export const HarnessState: Plugin = async ({ directory }) => {
     - To change leg, edit .planning/HARNESS.md or run /gsd-progress.
 </harness-state>`
 
+  let warning: string | null = null
+  if (KNOWN_LEGS.size > 0 && !KNOWN_LEGS.has(legRaw.toLowerCase())) {
+    const value = legRaw || "(missing)"
+    warning = `<harness-warning>\n  unknown leg '${value}' — guard fails open. Edit .planning/HARNESS.md or run /gsd-progress.\n</harness-warning>`
+  }
+
+  return { block, warning, legRaw }
+}
+
+export const HarnessState: Plugin = async ({ directory }) => {
+  return {
+    "experimental.chat.system.transform": async (_input: any, output: any) => {
+      const rendered = renderState(directory)
+      if (!rendered) return
+
       // opencode plugin API exposes output.system as a string array we can append to.
       if (Array.isArray(output?.system)) {
-        output.system.push(block)
+        output.system.push(rendered.block)
 
         // Backup channel for headless mode: warn on missing/unknown leg.
-        if (KNOWN_LEGS.size > 0 && !KNOWN_LEGS.has(legRaw.toLowerCase())) {
-          const value = legRaw || "(missing)"
-          output.system.push(
-            `<harness-warning>\n  unknown leg '${value}' — guard fails open. Edit .planning/HARNESS.md or run /gsd-progress.\n</harness-warning>`,
-          )
-        }
+        if (rendered.warning) output.system.push(rendered.warning)
       }
 
       const hb = readHeartbeat()
@@ -164,6 +178,20 @@ export const HarnessState: Plugin = async ({ directory }) => {
         lastInjection: new Date().toISOString(),
         injectionCount: hb.injectionCount + 1,
       })
+    },
+
+    // Compaction-survival: push the current <harness-state> block into the
+    // compaction prompt's context so the summary itself inherits leg / allowed
+    // / forbidden / phase. The per-turn re-injection above already covers
+    // post-compaction turns, but seeding the summary prevents the very first
+    // post-compaction turn from drifting before the next transform fires.
+    "experimental.session.compacting": async (_input: any, output: any) => {
+      const rendered = renderState(directory)
+      if (!rendered) return
+      if (Array.isArray(output?.context)) {
+        output.context.push(rendered.block)
+        if (rendered.warning) output.context.push(rendered.warning)
+      }
     },
   }
 }

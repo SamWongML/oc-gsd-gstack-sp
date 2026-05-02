@@ -251,8 +251,18 @@ cmd_init() {
   if [[ -f .planning/HARNESS.md ]]; then
     warn ".planning/HARNESS.md already exists — leaving it alone."
   else
-    sed "s/__SIZE__/$size/g" "$SHARE/templates/HARNESS.template.md" > .planning/HARNESS.md
-    ok ".planning/HARNESS.md created"
+    # Resolve autonomousMode for this size from legs.json. Prefer the installed
+    # copy (the plugins read it at runtime), fall back to share/ so `harness
+    # init` still works on a fresh clone before `harness install`.
+    local legs_src="$OPENCODE_DIR/plugin/legs.json"
+    [[ -f "$legs_src" ]] || legs_src="$SHARE/legs.json"
+    local autonomous="false"
+    if [[ -f "$legs_src" ]]; then
+      autonomous=$(jq -r --arg s "$size" '.autonomousMode[$s] // false | tostring' "$legs_src" 2>/dev/null || echo "false")
+    fi
+    sed -e "s/__SIZE__/$size/g" -e "s/__AUTONOMOUS__/$autonomous/g" \
+      "$SHARE/templates/HARNESS.template.md" > .planning/HARNESS.md
+    ok ".planning/HARNESS.md created (autonomous: $autonomous)"
   fi
 
   # AGENTS.md (project-level)
@@ -548,6 +558,66 @@ cmd_self_test() {
     else
       ok "legs.json: 5 legs, allowedSkills + forbiddenSkills arrays valid"
     fi
+
+    # 2b. Advance graph: every nextLeg must resolve to a known key or null,
+    #     ship must be terminal, and there must be no cycles. The guard's
+    #     auto-advance follows nextLeg blindly, so a bad graph silently breaks
+    #     long-running autonomy.
+    local graph_problem
+    graph_problem=$(jq -r '
+      def keys_set: (.legs | keys | map({(.): true}) | add);
+      keys_set as $known
+      | .legs
+      | to_entries
+      | map(
+          if (.value.nextLeg == null) then empty
+          elif (.value.nextLeg | type) != "string" then "\(.key): nextLeg must be string or null"
+          elif ($known[.value.nextLeg] // false) | not then "\(.key): nextLeg \"\(.value.nextLeg)\" is not a known leg"
+          else empty
+          end
+        )
+      | join("; ")
+    ' "$legs" 2>/dev/null)
+    if [[ -n "$graph_problem" ]]; then
+      warn "legs.json advance graph: $graph_problem"
+      errs=$((errs+1))
+    elif ! jq -e '.legs.ship.nextLeg == null' "$legs" >/dev/null 2>&1; then
+      warn "legs.json: ship.nextLeg must be null (terminal leg)"
+      errs=$((errs+1))
+    else
+      # Cycle detection: walk from each leg following nextLeg, abort if we
+      # revisit a node within the same walk.
+      local cycle
+      cycle=$(jq -r '
+        .legs as $L
+        | $L
+        | keys[] as $start
+        | reduce range(0; ($L | length) + 1) as $_ (
+            {cur: $start, seen: {}};
+            if .cur == null or .done then .
+            elif (.seen[.cur] // false) then . + {done: true, cycle: $start}
+            else . + {seen: (.seen + {(.cur): true}), cur: ($L[.cur].nextLeg)}
+            end
+          )
+        | select(.cycle)
+        | .cycle
+      ' "$legs" 2>/dev/null | head -n1)
+      if [[ -n "$cycle" ]]; then
+        warn "legs.json: cycle detected starting at '$cycle' — auto-advance would loop"
+        errs=$((errs+1))
+      else
+        ok "legs.json: advance graph linear, terminal at ship"
+      fi
+    fi
+
+    # 2c. autonomousMode block exists and covers all four sizes.
+    if jq -e '.autonomousMode | (has("mini") and has("small") and has("medium") and has("large"))' \
+        "$legs" >/dev/null 2>&1; then
+      ok "legs.json: autonomousMode covers mini/small/medium/large"
+    else
+      warn "legs.json: autonomousMode missing one of mini/small/medium/large — cmd_init will default to false"
+      warns=$((warns+1))
+    fi
   fi
 
   # 3. opencode plugin SDK exposes the experimental.chat.system.transform hook
@@ -574,11 +644,37 @@ cmd_self_test() {
     if [[ -z "$leg" ]]; then
       warn "Project HARNESS.md has no Leg: field"
       warns=$((warns+1))
+    elif [[ "$leg" == "done" ]]; then
+      ok "Project: Leg 'done' (terminal — milestone shipped)"
     elif jq -e --arg leg "$leg" '.legs | has($leg)' "$legs" >/dev/null 2>&1; then
       ok "Project: Leg '$leg' is registered in legs.json"
     else
       warn "Project: Leg '$leg' is NOT in legs.json — guard will fail open"
       warns=$((warns+1))
+    fi
+
+    # 4b. Autonomous: field present + recency check on autonomy heartbeat.
+    local autonomous
+    autonomous=$(grep -E '^- \*\*Autonomous:\*\*' .planning/HARNESS.md | head -n1 | sed 's/.*: *//;s/ *$//' | tr '[:upper:]' '[:lower:]')
+    if [[ -z "$autonomous" ]]; then
+      warn "Project HARNESS.md has no Autonomous: field — re-run: harness init (or add manually: '- **Autonomous:** false')"
+      warns=$((warns+1))
+    else
+      ok "Project: Autonomous: $autonomous"
+      if [[ "$autonomous" == "true" ]]; then
+        local hb="$OPENCODE_DIR/.harness-heartbeat.json"
+        if [[ -f "$hb" ]]; then
+          local idle adv
+          idle=$(jq -r '.lastIdleDeflection // "null"' "$hb" 2>/dev/null)
+          adv=$(jq -r '.lastAutoAdvance // "null"'    "$hb" 2>/dev/null)
+          if [[ "$idle" == "null" && "$adv" == "null" ]]; then
+            warn "Autonomous mode is on but neither idle deflection nor auto-advance has fired yet — confirm session.idle is reaching the plugin (run a turn, then re-check)"
+            warns=$((warns+1))
+          else
+            ok "Autonomy heartbeat: lastIdleDeflection=$idle, lastAutoAdvance=$adv"
+          fi
+        fi
+      fi
     fi
   fi
 

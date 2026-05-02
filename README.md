@@ -120,15 +120,19 @@ After deny-by-default filtering: **~9 skills** visible inside the `build` agent.
 ## Architecture (the 5-layer enforcement stack)
 
 ```text
- 0  AGENTS.md          ← soft, declarative (advisory only)
- 1  Per-agent skill perm    ← skills literally absent from agent's tool list
- 2  Per-agent task perm     ← subagents removed from Task tool description
- 3  chat.system.transform   ← refresh state from disk EVERY turn (kills compaction drift)
- 4  tool.execute.before     ← HARD ABORT on forbidden skill, returns redirect
- 5  session.idle            ← deflection guard, re-prompts if leg's exit criteria unmet
+ 0  AGENTS.md                     ← soft, declarative (advisory only)
+ 1  Per-agent skill perm          ← skills literally absent from agent's tool list
+ 2  Per-agent task perm           ← subagents removed from Task tool description
+ 3  chat.system.transform +       ← refresh state from disk EVERY turn AND seed the
+    experimental.session.compacting   compaction summary (kills compaction drift)
+ 4  tool.execute.before           ← HARD ABORT on forbidden skill, returns redirect
+ 4b tool.execute.after            ← AUTO-ADVANCE Leg: in HARNESS.md when a sentinel
+                                    skill succeeds (gsd-verify-work, gstack-ship)
+ 5  session.idle                  ← DEFLECTION via tui.appendPrompt (opt-in via
+                                    Autonomous: true; default for medium/large)
 ```
 
-Layer 4 is the killer feature: a 50-line opencode plugin reads `.planning/HARNESS.md` on every tool call, and aborts any skill that isn't allowed in the current leg with a redirect message. **One file edit reconfigures everything live — no restart.**
+Layer 4 is the killer feature: a 50-line opencode plugin reads `.planning/HARNESS.md` on every tool call, and aborts any skill that isn't allowed in the current leg with a redirect message. **One file edit reconfigures everything live — no restart.** Layer 4b/5 turn that into a self-driving sequence for medium/large milestones; small/mini sizes leave it off.
 
 Full architecture: see [`docs/DESIGN.md`](docs/DESIGN.md) and [`docs/HARDENING.md`](docs/HARDENING.md).
 

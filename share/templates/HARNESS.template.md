@@ -5,6 +5,7 @@
 > Forbidden-next here to reconfigure the guard live (no restart).
 
 - **Size:** __SIZE__
+- **Autonomous:** __AUTONOMOUS__
 - **Leg:** decision
 - **Phase:** —
 - **Plan:** —

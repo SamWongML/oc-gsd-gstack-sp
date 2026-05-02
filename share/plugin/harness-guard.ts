@@ -33,32 +33,34 @@ const HEARTBEAT_PATH = join(homedir(), ".config", "opencode", ".harness-heartbea
 const PLUGIN_DIR = dirname(fileURLToPath(import.meta.url))
 const LEGS_PATH = join(PLUGIN_DIR, "legs.json")
 
-function loadLegRules(): Record<string, LegRules> {
+function loadLegRules(): { rules: Record<string, LegRules>; nextLeg: Record<string, string | null> } {
   try {
     const raw = readFileSync(LEGS_PATH, "utf8")
     const data = JSON.parse(raw)
     const legs = data?.legs
     if (!legs || typeof legs !== "object") {
       console.warn(`[harness-guard] ${LEGS_PATH} has no .legs object — guard fails open.`)
-      return {}
+      return { rules: {}, nextLeg: {} }
     }
-    const out: Record<string, LegRules> = {}
+    const rules: Record<string, LegRules> = {}
+    const nextLeg: Record<string, string | null> = {}
     for (const [name, leg] of Object.entries(legs as Record<string, any>)) {
       const allowed = Array.isArray(leg?.allowedSkills) ? leg.allowedSkills : []
       const forbidden = Array.isArray(leg?.forbiddenSkills) ? leg.forbiddenSkills : []
-      out[name] = {
+      rules[name] = {
         allowed: new Set(allowed),
         forbidden: new Set(forbidden),
       }
+      nextLeg[name] = typeof leg?.nextLeg === "string" ? leg.nextLeg : null
     }
-    return out
+    return { rules, nextLeg }
   } catch (err) {
     console.warn(`[harness-guard] failed to load ${LEGS_PATH}: ${(err as Error).message} — guard fails open.`)
-    return {}
+    return { rules: {}, nextLeg: {} }
   }
 }
 
-const LEG_RULES: Record<string, LegRules> = loadLegRules()
+const { rules: LEG_RULES, nextLeg: NEXT_LEG } = loadLegRules()
 
 // -------------------- heartbeat (operator visibility) --------------------
 
@@ -123,16 +125,33 @@ interface HarnessSnapshot {
   rules: LegRules
 }
 
-function loadHarness(directory: string): HarnessSnapshot | null {
+function readHarnessFile(directory: string): string | null {
   const harnessFile = join(directory, ".planning", "HARNESS.md")
   if (!existsSync(harnessFile)) return null
-
-  let content: string
   try {
-    content = readFileSync(harnessFile, "utf8")
+    return readFileSync(harnessFile, "utf8")
   } catch {
     return null
   }
+}
+
+function readLegRaw(directory: string): string {
+  const content = readHarnessFile(directory)
+  if (!content) return ""
+  const legMatch = /^- \*\*Leg:\*\*\s*(\w+)/m.exec(content)
+  return legMatch ? legMatch[1].toLowerCase() : ""
+}
+
+function readAutonomous(directory: string): boolean {
+  const content = readHarnessFile(directory)
+  if (!content) return false
+  const m = /^- \*\*Autonomous:\*\*\s*(\w+)/m.exec(content)
+  return !!m && m[1].toLowerCase() === "true"
+}
+
+function loadHarness(directory: string): HarnessSnapshot | null {
+  const content = readHarnessFile(directory)
+  if (!content) return null
 
   const legMatch = /^- \*\*Leg:\*\*\s*(\w+)/m.exec(content)
   const leg = legMatch ? legMatch[1].toLowerCase() : ""
@@ -158,10 +177,43 @@ function loadHarness(directory: string): HarnessSnapshot | null {
   return { leg, rules }
 }
 
+// -------------------- atomic Leg: rewrite (auto-advance) --------------------
+
+function rewriteLeg(directory: string, fromLeg: string, toLeg: string): boolean {
+  const harnessFile = join(directory, ".planning", "HARNESS.md")
+  if (!existsSync(harnessFile)) return false
+  let content: string
+  try {
+    content = readFileSync(harnessFile, "utf8")
+  } catch {
+    return false
+  }
+  const legLine = /^- \*\*Leg:\*\*\s*\w+.*$/m
+  if (!legLine.test(content)) return false
+  const next = content.replace(legLine, `- **Leg:** ${toLeg}`)
+  if (next === content) return false
+  try {
+    const tmp = harnessFile + ".tmp"
+    writeFileSync(tmp, next)
+    renameSync(tmp, harnessFile)
+  } catch {
+    return false
+  }
+  // Breadcrumb the transition so operators can see why the leg changed.
+  try {
+    const stamp = new Date().toISOString()
+    appendFileSync(harnessFile, `\n- ${stamp} auto-advance: ${fromLeg} → ${toLeg}`)
+    trimBreadcrumbs(harnessFile)
+  } catch {
+    /* breadcrumb is best-effort */
+  }
+  return true
+}
+
 // -------------------- breadcrumb append + trim --------------------
 
 const BREADCRUMB_LIMIT = 50
-const BREADCRUMB_LINE_RE = /^- \d{4}-\d{2}-\d{2}T[^\s]+\s+skill:\s+/
+const BREADCRUMB_LINE_RE = /^- \d{4}-\d{2}-\d{2}T[^\s]+\s+(?:skill:|auto-advance:)\s+/
 
 function appendBreadcrumb(directory: string, skillName: string): void {
   const harnessFile = join(directory, ".planning", "HARNESS.md")
@@ -272,12 +324,48 @@ export const HarnessGuard: Plugin = async ({ directory, client }) => {
       }
     },
 
-    // -------------------- BREADCRUMB on successful skill load --------------------
+    // -------------------- BREADCRUMB + AUTO-ADVANCE on successful skill load --------------------
     "tool.execute.after": async (input: any) => {
       if (input?.tool !== "skill") return
       const skillName: string | undefined = input?.args?.name
       if (!skillName) return
       appendBreadcrumb(directory, skillName)
+
+      // Auto-advance: a successful sentinel skill rewrites Leg: in HARNESS.md
+      // so the next turn (and the guard) see the new leg without manual edit.
+      // - gsd-verify-work success in 'verification' → advance to nextLeg ('ship')
+      // - gstack-ship success in 'ship'             → terminal marker 'done'
+      const leg = readLegRaw(directory)
+      let advanceTo: string | null = null
+      if (skillName === "gsd-verify-work" && leg === "verification") {
+        advanceTo = NEXT_LEG["verification"] ?? "ship"
+      } else if (skillName === "gstack-ship" && leg === "ship") {
+        advanceTo = "done"
+      }
+      if (advanceTo && rewriteLeg(directory, leg, advanceTo)) {
+        updateHeartbeat({ lastAutoAdvance: new Date().toISOString() })
+      }
+    },
+
+    // -------------------- IDLE DEFLECTION (Layer 5) --------------------
+    // session.idle fires when the assistant's turn ends. If the project is in
+    // autonomous mode and not already at a terminal state, enqueue the
+    // canonical recovery command into the prompt so the next turn picks up
+    // automatically. tui.appendPrompt 404s in headless mode — caught.
+    event: async (input: any) => {
+      if (input?.event?.type !== "session.idle") return
+      if (!readAutonomous(directory)) return
+      const leg = readLegRaw(directory)
+      // 'done' is the terminal marker auto-advance writes after gstack-ship.
+      // Skipping it here is what stops the deflection loop on a finished milestone.
+      if (!leg || leg === "done") return
+      try {
+        await client.tui.appendPrompt({ body: { text: "\n/gsd-progress" } })
+        updateHeartbeat({ lastIdleDeflection: new Date().toISOString() })
+      } catch {
+        // Headless mode (no TUI) — appendPrompt endpoint 404s. Per-turn
+        // re-injection (Layer 3) and compaction-survival still hold.
+      }
     },
   }
 }

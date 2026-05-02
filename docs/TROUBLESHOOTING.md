@@ -74,6 +74,47 @@ npx --yes gsd-opencode uninstall --global || true
 harness install   # always passes --minimal
 ```
 
+## Autonomous mode isn't deflecting on idle
+
+**Symptom:** `Autonomous: true` is set in `.planning/HARNESS.md`, but the session
+goes idle without `/gsd-progress` being enqueued.
+
+**Diagnosis:**
+```bash
+harness self-test
+# Look for: "Autonomy heartbeat: lastIdleDeflection=..., lastAutoAdvance=..."
+```
+
+**Fixes:**
+- Confirm you're in the TUI, not headless `opencode run`. `tui.appendPrompt`
+  has no effect in headless mode (that's by design — Layer 3 + 4 still hold).
+- Confirm `harness-guard.ts` is loaded: re-run `harness doctor`.
+- If the heartbeat shows `lastIdleDeflection: null` after several turns, the
+  `event` hook may have been removed/renamed by opencode. Run
+  `harness self-test` to surface SDK contract drift, and grep
+  `~/.config/opencode/node_modules/@opencode-ai/plugin/dist/index.d.ts` for
+  the literal `"event"` hook key.
+
+## Auto-advance didn't fire after `gsd-verify-work` succeeded
+
+**Symptom:** Verification finished cleanly but `Leg:` is still `verification`.
+
+**Diagnosis:**
+```bash
+grep -E '^- \*\*Leg:\*\*' .planning/HARNESS.md
+tail -n5 .planning/HARNESS.md   # look for "auto-advance:" breadcrumb
+jq '.lastAutoAdvance' ~/.config/opencode/.harness-heartbeat.json
+```
+
+**Fixes:**
+- Ensure the skill ran via the harness's `skill` tool path, not as a manual
+  edit — `tool.execute.after` only fires for tool invocations.
+- If `Leg:` was edited by hand mid-run, the auto-advance still works on the
+  next sentinel call but the breadcrumb may be missing context. Re-run
+  `/gsd-progress` to reorient.
+- Confirm `legs.json` has the expected `nextLeg` chain: `harness self-test`
+  validates the advance graph for cycles and a terminal `ship`.
+
 ## "I'm in the wrong agent"
 
 The agents are mode-locked by `permission.skill`. If you started in `build`
