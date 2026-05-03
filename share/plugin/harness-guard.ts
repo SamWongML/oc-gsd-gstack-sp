@@ -376,23 +376,24 @@ export const HarnessGuard: Plugin = async ({ directory, client }) => {
     },
 
     // -------------------- IDLE DEFLECTION (Layer 5) --------------------
-    // session.idle fires when the assistant's turn ends. If the project is in
-    // autonomous mode and not already at a terminal state, enqueue the
-    // canonical recovery command into the prompt so the next turn picks up
-    // automatically. tui.appendPrompt 404s in headless mode — caught.
+    // session.idle fires after EVERY assistant turn. Deflect only when a
+    // sentinel command just auto-advanced the leg — that's the one moment
+    // the chain actually wants a nudge. Otherwise interactive turns (chat,
+    // questions, manual commands) would each shove /gsd-progress into the
+    // user's input box.
     event: async (input: any) => {
       if (input?.event?.type !== "session.idle") return
       if (!readAutonomous(directory)) return
       const leg = readLegRaw(directory)
-      // 'done' is the terminal marker auto-advance writes after gstack-ship.
-      // Skipping it here is what stops the deflection loop on a finished milestone.
       if (!leg || leg === "done") return
+      const hb = readHeartbeat()
+      if (!hb.lastAutoAdvance) return
+      if (hb.lastIdleDeflection && hb.lastIdleDeflection >= hb.lastAutoAdvance) return
       try {
         await client.tui.appendPrompt({ body: { text: "\n/gsd-progress" } })
         updateHeartbeat({ lastIdleDeflection: new Date().toISOString() })
       } catch {
-        // Headless mode (no TUI) — appendPrompt endpoint 404s. Per-turn
-        // re-injection (Layer 3) and compaction-survival still hold.
+        // Headless mode (no TUI) — appendPrompt endpoint 404s.
       }
     },
   }
