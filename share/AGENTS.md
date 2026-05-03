@@ -115,8 +115,9 @@ consumer is named in the plan. Otherwise `/gstack-review` rejects the PR.
 - All three frameworks: `harness update` (single command, idempotent).
 - After any update: run `/gsd-progress` once before resuming work.
 
-## Hard rules (enforced by the guard plugin — `tool.execute.before`)
+## Hard rules (enforced by the guard plugin — `command.execute.before`)
 
-The plugin reads `.planning/HARNESS.md` on every tool call and aborts skills not
-allowed in the current leg. If you receive a "Harness violation" error, do not
-retry — read the abort message, run `/gsd-progress`, and follow its routing.
+The plugin reads `.planning/HARNESS.md` on every `/gsd-*` and `/gstack-*` slash
+command and aborts ones not allowed in the current leg. If you receive a
+"Harness violation" error, do not retry — read the abort message, run
+`/gsd-progress`, and follow its routing.

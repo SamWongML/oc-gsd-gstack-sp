@@ -1,8 +1,9 @@
 # Harness state
 
 > Written by `harness init` and updated by `/gsd-progress` and the harness guard plugin.
-> The `tool.execute.before` hook reads this on every tool call. Edit Leg / Allowed-next /
-> Forbidden-next here to reconfigure the guard live (no restart).
+> The `command.execute.before` hook reads this on every gsd-*/gstack-* slash
+> command. Edit Leg / Allowed-next / Forbidden-next here to reconfigure the
+> guard live (no restart).
 
 - **Size:** __SIZE__
 - **Autonomous:** __AUTONOMOUS__

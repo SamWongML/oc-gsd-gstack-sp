@@ -1,6 +1,5 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "_note": "DERIVED from share/legs.json — edit legs.json first.",
 
   "plugin": [
     "superpowers@git+https://github.com/obra/superpowers.git"

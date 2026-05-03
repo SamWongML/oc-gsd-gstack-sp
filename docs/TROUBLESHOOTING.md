@@ -107,8 +107,9 @@ jq '.lastAutoAdvance' ~/.config/opencode/.harness-heartbeat.json
 ```
 
 **Fixes:**
-- Ensure the skill ran via the harness's `skill` tool path, not as a manual
-  edit — `tool.execute.after` only fires for tool invocations.
+- Ensure the command actually fired (slash invocation, not a manual HARNESS
+  edit) — auto-advance lives in `command.execute.before` and only runs when
+  the sentinel command (`gsd-verify-work`, `gstack-ship`) is allowed through.
 - If `Leg:` was edited by hand mid-run, the auto-advance still works on the
   next sentinel call but the breadcrumb may be missing context. Re-run
   `/gsd-progress` to reorient.

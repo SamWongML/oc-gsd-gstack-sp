@@ -1,9 +1,15 @@
 // harness-guard.ts
 //
-// opencode plugin: hard-aborts skill calls that violate the leg rules in
-// .planning/HARNESS.md. This is Layer 4 of the defense-in-depth stack — it
-// physically prevents wrong calls from executing, even if the LLM ignored
+// opencode plugin: hard-aborts slash-command invocations that violate the leg
+// rules in .planning/HARNESS.md. This is Layer 4 of the defense-in-depth stack
+// — it physically prevents wrong calls from executing, even if the LLM ignored
 // AGENTS.md and the per-agent permissions somehow let the call through.
+//
+// Mechanism: in opencode 1.14.x, gsd-* / gstack-* skills are invoked as slash
+// commands (`/gsd-execute-phase`, `/gstack-ship`, …), which fire the plugin's
+// `command.execute.before` hook. Earlier versions of this plugin policed
+// `tool.execute.before` for a `skill` tool that no longer exists in current
+// opencode, so Layer 4 was silently dormant — see the runtime test report.
 //
 // Rules come from legs.json sitting alongside this file (single source of
 // truth, shipped by `harness install`). HARNESS.md may override per-project
@@ -262,87 +268,109 @@ const toastDedupe = new Set<string>()
 
 export const HarnessGuard: Plugin = async ({ directory, client }) => {
   return {
-    // -------------------- HARD ABORT on forbidden skill calls --------------------
-    "tool.execute.before": async (input: any, output: any) => {
-      // Only police skill loads. opencode's native skill tool name is "skill".
-      if (input?.tool !== "skill") return
+    // -------------------- HARD ABORT + BREADCRUMB + AUTO-ADVANCE --------------------
+    // command.execute.before fires when a slash command (e.g. /gsd-execute-phase)
+    // is about to be rendered into the chat. We intercept gsd-* / gstack-*
+    // commands here:
+    //   - if forbidden in the current leg → replace output.parts with a single
+    //     denial TextPart so the model only sees "blocked, do X instead".
+    //   - if allowed → append breadcrumb and, for sentinel commands, advance
+    //     Leg: in HARNESS.md so the next turn picks up the new leg.
+    "command.execute.before": async (input: any, output: any) => {
+      const command: string = input?.command ?? ""
+      if (!command) return
+
+      // Only police harness-managed commands. Everything else (e.g. user's own
+      // /custom-thing) flows through untouched.
+      if (!command.startsWith("gsd-") && !command.startsWith("gstack-")) return
 
       const now = new Date().toISOString()
-      updateHeartbeat({ lastIntercept: now, interceptCount: readHeartbeat().interceptCount + 1 })
+      updateHeartbeat({
+        lastIntercept: now,
+        interceptCount: readHeartbeat().interceptCount + 1,
+      })
 
       const snap = loadHarness(directory)
       if (!snap) return // No HARNESS.md or unknown leg — fail open.
 
-      const skillName: string | undefined = input?.args?.name
-      if (!skillName) {
-        // Runtime contract: skill tool should always carry args.name. If not, log once.
-        console.warn("[harness-guard] skill tool invoked without args.name; cannot evaluate.")
-        return
-      }
-
       let abortMsg: string | undefined
-
-      if (snap.rules.forbidden.has(skillName)) {
+      if (snap.rules.forbidden.has(command)) {
         abortMsg =
-          `Harness violation: skill '${skillName}' is forbidden in leg '${snap.leg}'. ` +
+          `Harness violation: '${command}' is forbidden in leg '${snap.leg}'. ` +
           `Allowed-next: ${[...snap.rules.allowed].join(", ")}. ` +
           `Run /gsd-progress for the next correct action, or update .planning/HARNESS.md to change leg.`
-      } else if (snap.rules.allowed.size > 0 && !snap.rules.allowed.has(skillName)) {
+      } else if (snap.rules.allowed.size > 0 && !snap.rules.allowed.has(command)) {
         abortMsg =
-          `Harness violation: skill '${skillName}' is not in the allow-list for leg '${snap.leg}'. ` +
+          `Harness violation: '${command}' is not in the allow-list for leg '${snap.leg}'. ` +
           `Allowed-next: ${[...snap.rules.allowed].join(", ")}. ` +
           `Run /gsd-progress to find the right next command.`
       }
 
-      if (!abortMsg) return
-
-      output.abort = abortMsg
-
-      const hb = readHeartbeat()
-      updateHeartbeat({
-        lastAbort: now,
-        abortCount: hb.abortCount + 1,
-        lastAbortedSkill: skillName,
-      })
-
-      // Per-session dedupe: only toast once per (leg, skill) pair.
-      const key = `${snap.leg}:${skillName}`
-      if (!toastDedupe.has(key)) {
-        toastDedupe.add(key)
-        try {
-          await client.tui.showToast({
-            body: {
-              variant: "warning",
-              title: "Harness Warning",
-              message: abortMsg,
-              duration: 6000,
-            },
-          })
-        } catch {
-          // Headless mode (no TUI) — toast endpoint 404s. Hard abort already set.
+      if (abortMsg) {
+        // Replace the rendered command output with a synthetic denial part so
+        // the model receives only the denial, not the command's instructions.
+        // Required TextPart fields (id/sessionID/messageID) are filled with
+        // synthetic placeholders; opencode treats parts pushed by plugins as
+        // synthetic message content.
+        if (Array.isArray(output?.parts)) {
+          const sid = input?.sessionID ?? ""
+          const partID = `harness-abort-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+          output.parts.length = 0
+          output.parts.push({
+            id: partID,
+            sessionID: sid,
+            messageID: partID,
+            type: "text",
+            text: abortMsg,
+            synthetic: true,
+          } as any)
         }
+
+        const hb = readHeartbeat()
+        updateHeartbeat({
+          lastAbort: now,
+          abortCount: hb.abortCount + 1,
+          lastAbortedSkill: command,
+        })
+
+        // Per-session dedupe: only toast once per (leg, command) pair.
+        const key = `${snap.leg}:${command}`
+        if (!toastDedupe.has(key)) {
+          toastDedupe.add(key)
+          try {
+            await client.tui.showToast({
+              body: {
+                variant: "warning",
+                title: "Harness Warning",
+                message: abortMsg,
+                duration: 6000,
+              },
+            })
+          } catch {
+            // Headless mode (no TUI) — toast endpoint 404s. The denial part is
+            // already in output.parts, so the model still sees the block.
+          }
+        }
+        return
       }
-    },
 
-    // -------------------- BREADCRUMB + AUTO-ADVANCE on successful skill load --------------------
-    "tool.execute.after": async (input: any) => {
-      if (input?.tool !== "skill") return
-      const skillName: string | undefined = input?.args?.name
-      if (!skillName) return
-      appendBreadcrumb(directory, skillName)
+      // Allowed path: breadcrumb the call so operators can audit the leg path.
+      appendBreadcrumb(directory, command)
 
-      // Auto-advance: a successful sentinel skill rewrites Leg: in HARNESS.md
-      // so the next turn (and the guard) see the new leg without manual edit.
-      // - gsd-verify-work success in 'verification' → advance to nextLeg ('ship')
-      // - gstack-ship success in 'ship'             → terminal marker 'done'
-      const leg = readLegRaw(directory)
+      // Auto-advance: a sentinel command rewrites Leg: in HARNESS.md so the
+      // next turn (and the guard) see the new leg without manual edit. This
+      // fires optimistically before the command renders — semantically "we
+      // committed to advancing because the user asked for the sentinel". If
+      // the sentinel fails, the user can edit Leg: back manually.
+      //   - /gsd-verify-work in 'verification' → advance to nextLeg ('ship')
+      //   - /gstack-ship     in 'ship'         → terminal marker 'done'
       let advanceTo: string | null = null
-      if (skillName === "gsd-verify-work" && leg === "verification") {
+      if (command === "gsd-verify-work" && snap.leg === "verification") {
         advanceTo = NEXT_LEG["verification"] ?? "ship"
-      } else if (skillName === "gstack-ship" && leg === "ship") {
+      } else if (command === "gstack-ship" && snap.leg === "ship") {
         advanceTo = "done"
       }
-      if (advanceTo && rewriteLeg(directory, leg, advanceTo)) {
+      if (advanceTo && rewriteLeg(directory, snap.leg, advanceTo)) {
         updateHeartbeat({ lastAutoAdvance: new Date().toISOString() })
       }
     },

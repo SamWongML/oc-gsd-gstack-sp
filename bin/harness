@@ -99,7 +99,10 @@ cmd_install() {
     # Install first so the new structured layout (skills/gsd-*/SKILL.md) is in
     # place before we sweep, minimizing the "no skills" window if anything goes
     # wrong mid-swap.
-    npx --yes gsd-opencode@latest install --global >/dev/null
+    # Feed a newline so the gsd-opencode "Existing installation" prompt
+    # auto-accepts its default ("Repair") instead of crashing on stdin EOF
+    # when invoked non-interactively.
+    printf '\n' | npx --yes gsd-opencode@latest install --global >/dev/null
     # Legacy cleanup: get-shit-done-cc --minimal shipped flat skills/gsd-*.md
     # files; gsd-opencode uses skills/gsd-*/SKILL.md directories instead.
     if [[ -d "$OPENCODE_DIR/skills" ]]; then
@@ -325,14 +328,16 @@ cmd_doctor() {
     fi
   done
 
-  # Harness assets
+  # Harness source tree (only required for `harness update`; install can run
+  # from a clone via HARNESS_HOME=... and won't leave a copy at the default path)
   if [[ -d "$SHARE" ]]; then
-    ok "Harness assets at $HARNESS_DIR"
+    ok "Harness source at $HARNESS_DIR"
   else
-    warn "Harness assets missing — run: harness install"; errs=$((errs+1))
+    warn "Harness source not at $HARNESS_DIR — set HARNESS_HOME or re-clone before \`harness update\`"
+    warns=$((warns+1))
   fi
 
-  # gsd-opencode (structured layout: skills/gsd-*/SKILL.md + command/gsd/*.md)
+  # gsd-opencode (structured layout: skills/gsd-*/SKILL.md + command/gsd-*.md)
   if [[ -d "$OPENCODE_DIR/skills" ]]; then
     local n=0
     for d in "$OPENCODE_DIR"/skills/gsd-*; do
@@ -361,18 +366,24 @@ cmd_doctor() {
     warns=$((warns+1))
   fi
 
-  # gsd-opencode slash commands
-  if [[ -d "$OPENCODE_DIR/command/gsd" ]]; then
-    local cmd_count
-    cmd_count=$(find "$OPENCODE_DIR/command/gsd" -maxdepth 1 -type f -name '*.md' | wc -l | tr -d ' ')
-    if [[ "$cmd_count" -gt 0 ]]; then
-      ok "gsd-opencode commands: $cmd_count slash commands at command/gsd/"
+  # gsd-opencode slash commands (current gsd-opencode installs flat as
+  # command/gsd-*.md; older releases nested at command/gsd/*.md — accept either)
+  if [[ -d "$OPENCODE_DIR/command" ]]; then
+    local cmd_count_flat cmd_count_nested
+    cmd_count_flat=$(find "$OPENCODE_DIR/command" -maxdepth 1 -type f -name 'gsd-*.md' 2>/dev/null | wc -l | tr -d ' ')
+    cmd_count_nested=0
+    [[ -d "$OPENCODE_DIR/command/gsd" ]] && \
+      cmd_count_nested=$(find "$OPENCODE_DIR/command/gsd" -maxdepth 1 -type f -name '*.md' 2>/dev/null | wc -l | tr -d ' ')
+    if [[ "$cmd_count_flat" -gt 0 ]]; then
+      ok "gsd-opencode commands: $cmd_count_flat slash commands at command/gsd-*.md (flat)"
+    elif [[ "$cmd_count_nested" -gt 0 ]]; then
+      ok "gsd-opencode commands: $cmd_count_nested slash commands at command/gsd/ (nested)"
     else
-      warn "gsd-opencode command/gsd/ exists but has no *.md files — run: harness install"
+      warn "gsd-opencode commands not found (looked for command/gsd-*.md and command/gsd/*.md) — run: harness install"
       warns=$((warns+1))
     fi
   else
-    warn "gsd-opencode command/gsd/ not found — run: harness install"
+    warn "gsd-opencode command/ directory not found — run: harness install"
     warns=$((warns+1))
   fi
 
@@ -452,7 +463,7 @@ cmd_doctor() {
 
   # Project-level (if in a project)
   if [[ -f .planning/HARNESS.md ]]; then
-    local leg; leg=$(grep -E '^- \*\*Leg:\*\*' .planning/HARNESS.md | head -n1 | sed 's/.*: *//;s/ *$//')
+    local leg; leg=$(grep -E '^- \*\*Leg:\*\*' .planning/HARNESS.md | head -n1 | sed -E 's/^- \*\*[^:]+:\*\* *//;s/ *$//')
     ok "Project: HARNESS.md present (current leg: ${leg:-unset})"
   else
     [[ -d .git ]] && warn "No .planning/HARNESS.md in this project — run: harness init"
@@ -640,7 +651,7 @@ cmd_self_test() {
   # 4. If we're in a project, validate Leg field against legs.json keys.
   if [[ -f .planning/HARNESS.md && -f "$legs" ]]; then
     local leg
-    leg=$(grep -E '^- \*\*Leg:\*\*' .planning/HARNESS.md | head -n1 | sed 's/.*: *//;s/ *$//' | tr '[:upper:]' '[:lower:]')
+    leg=$({ grep -E '^- \*\*Leg:\*\*' .planning/HARNESS.md || true; } | head -n1 | sed -E 's/^- \*\*[^:]+:\*\* *//;s/ *$//' | tr '[:upper:]' '[:lower:]')
     if [[ -z "$leg" ]]; then
       warn "Project HARNESS.md has no Leg: field"
       warns=$((warns+1))
@@ -655,7 +666,7 @@ cmd_self_test() {
 
     # 4b. Autonomous: field present + recency check on autonomy heartbeat.
     local autonomous
-    autonomous=$(grep -E '^- \*\*Autonomous:\*\*' .planning/HARNESS.md | head -n1 | sed 's/.*: *//;s/ *$//' | tr '[:upper:]' '[:lower:]')
+    autonomous=$({ grep -E '^- \*\*Autonomous:\*\*' .planning/HARNESS.md || true; } | head -n1 | sed -E 's/^- \*\*[^:]+:\*\* *//;s/ *$//' | tr '[:upper:]' '[:lower:]')
     if [[ -z "$autonomous" ]]; then
       warn "Project HARNESS.md has no Autonomous: field — re-run: harness init (or add manually: '- **Autonomous:** false')"
       warns=$((warns+1))
@@ -699,7 +710,7 @@ cmd_uninstall() {
   echo "  - $OPENCODE_DIR/plugin/legs.json"
   echo "  - $OPENCODE_DIR/.harness-heartbeat.json"
   echo "  - $OPENCODE_DIR/skills/gstack"
-  echo "  - gsd-opencode (skills/gsd-*/, command/gsd/, agents/gsd-*.md, get-shit-done/)"
+  echo "  - gsd-opencode (skills/gsd-*/, command/gsd-*.md (or command/gsd/), agents/gsd-*.md, get-shit-done/)"
   echo
   echo "${BOLD}Your projects' .planning/ directories will NOT be touched.${RESET}"
   echo
@@ -724,6 +735,9 @@ cmd_uninstall() {
     fi
     if [[ -d "$OPENCODE_DIR/command/gsd" ]]; then
       rm -rf "$OPENCODE_DIR/command/gsd"
+    fi
+    if [[ -d "$OPENCODE_DIR/command" ]]; then
+      find "$OPENCODE_DIR/command" -maxdepth 1 -type f -name 'gsd-*.md' -exec rm -f {} +
     fi
     if [[ -d "$OPENCODE_DIR/agents" ]]; then
       find "$OPENCODE_DIR/agents" -maxdepth 1 -type f -name 'gsd-*.md' -exec rm -f {} +

@@ -125,9 +125,10 @@ After deny-by-default filtering: **~9 skills** visible inside the `build` agent.
  2  Per-agent task perm           ← subagents removed from Task tool description
  3  chat.system.transform +       ← refresh state from disk EVERY turn AND seed the
     experimental.session.compacting   compaction summary (kills compaction drift)
- 4  tool.execute.before           ← HARD ABORT on forbidden skill, returns redirect
- 4b tool.execute.after            ← AUTO-ADVANCE Leg: in HARNESS.md when a sentinel
-                                    skill succeeds (gsd-verify-work, gstack-ship)
+ 4  command.execute.before        ← HARD ABORT on forbidden slash command (gsd-*/
+                                    gstack-*); also AUTO-ADVANCES Leg: in HARNESS.md
+                                    when a sentinel command succeeds (gsd-verify-work,
+                                    gstack-ship)
  5  session.idle                  ← DEFLECTION via tui.appendPrompt (opt-in via
                                     Autonomous: true; default for medium/large)
 ```

@@ -42,10 +42,12 @@ Slogan: **gstack thinks → GSD stabilizes → Superpowers executes**.
    experimental.session.compacting    ACTIVE — re-injects HARNESS.md state every turn AND
                                       seeds the compaction summary so post-compaction
                                       turns inherit leg / allowed / forbidden / phase
-4  tool.execute.before                HARD — aborts forbidden skill calls before they run
-4b tool.execute.after                 ADVANCE — auto-advances Leg: in HARNESS.md when a
-                                      sentinel skill succeeds (gsd-verify-work → ship,
-                                      gstack-ship → done)
+4  command.execute.before             HARD — aborts forbidden gsd-*/gstack-* slash commands
+                                      before they run, AND auto-advances Leg: in HARNESS.md
+                                      when a sentinel command succeeds (gsd-verify-work →
+                                      ship, gstack-ship → done). Replaces the legacy
+                                      tool.execute.before/after pair, which polled a
+                                      `skill` tool that no longer exists in opencode 1.14+.
 5  session.idle (event hook)          DEFLECTION — when Autonomous: true and leg ≠ done,
                                       enqueues "/gsd-progress" via tui.appendPrompt so
                                       the next turn picks up automatically
@@ -55,10 +57,10 @@ Layers 1 and 2 use opencode's deny-by-default permission model. The denied
 skills are not just blocked — they're removed from the LLM's view, so it
 cannot accidentally call them.
 
-Layer 4 is the killer feature. The `tool.execute.before` plugin reads
-`.planning/HARNESS.md` on every tool call, looks at the current leg, and
-aborts skills not allowed in that leg with a redirect message. **One file
-edit reconfigures everything live — no restart.**
+Layer 4 is the killer feature. The `command.execute.before` plugin reads
+`.planning/HARNESS.md` on every gsd-*/gstack-* slash command, looks at the
+current leg, and aborts commands not allowed in that leg with a redirect
+message. **One file edit reconfigures everything live — no restart.**
 
 Layer 5 is opt-in via `Autonomous: true` (default for `medium` / `large`
 sizes per `share/legs.json`'s `autonomousMode` block). It uses the
